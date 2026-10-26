@@ -17,9 +17,11 @@ def configure(cfg):
         if not re.fullmatch(r'\d{1,25}',cfg[key]):raise ValueError(key+' must be a numeric UID, not a nickname or Douyin ID')
     if not re.fullmatch(r'/user/[A-Za-z0-9_-]{8,180}',cfg['owner_profile']):raise ValueError('owner_profile must be /user/<sec_uid>')
     workspace=safe_path(cfg['codex_workspace']);user=Path.home();dsh=safe_path(cfg.get('dsh_home') or user/'.dsh')
+    nickname=cfg.get('owner_nickname') or '主人'
+    if not isinstance(nickname,str) or len(nickname)>80 or any(c in nickname for c in "'\"\\\n\r"):raise ValueError('owner_nickname contains unsupported quote/control characters')
     python=safe_path(cfg.get('python') or sys.executable)
     values={'__RUNTIME_ROOT__':runtime.as_posix(),'__PROJECT_DIR__':installed.as_posix(),'__PROJECT_URI__':installed.as_uri(),
-      '__OWNER_UID__':cfg['owner_uid'],'__ACCOUNT_UID__':cfg['account_uid'],'__OWNER_PROFILE__':cfg['owner_profile'],
+      '__OWNER_UID__':cfg['owner_uid'],'__ACCOUNT_UID__':cfg['account_uid'],'__OWNER_PROFILE__':cfg['owner_profile'],'__OWNER_NICKNAME__':nickname,
       '__CODEX_HOME__':safe_path(cfg.get('codex_home') or user/'.codex').as_posix(),'__CODEX_WORKSPACE__':workspace.as_posix(),
       '__USER_HOME__':user.as_posix(),'__DSH_HOME__':dsh.as_posix(),'__DSH_RESOURCES__':safe_path(cfg.get('dsh_resources') or dsh/'resources').as_posix(),
       '__PYTHON__':python.as_posix(),'__PYTHONW__':python.with_name('pythonw.exe').as_posix(),

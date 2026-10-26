@@ -18,7 +18,7 @@ from app.sdk_receiver import OWNER, OWNER_UID, ACCOUNT_UID
 
 PROFILE = ROOT / 'edge-profile'
 OWNER_SEC_UID = OWNER.rsplit('/', 1)[-1]
-OWNER_NICKNAME = '搞点饭吃吃'
+OWNER_NICKNAME = '__OWNER_NICKNAME__'
 ATLIST_PATH = '/aweme/v1/web/familiar/atlist/'
 PUBLISH_PATH = '/aweme/v1/web/comment/publish/'
 COMMENT_LIST_PATH = '/aweme/v1/web/comment/list/'

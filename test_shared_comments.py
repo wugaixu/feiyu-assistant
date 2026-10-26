@@ -14,7 +14,7 @@ class FakeBrowser:
         self.published=[]
         self.closed=False
         self.self={'status_code':0,'user_uid':c.ACCOUNT_UID,'nickname':'饭团小助理'}
-        self.owner={'uid':c.OWNER_UID,'sec_uid':c.OWNER_SEC_UID,'nickname':'搞点饭吃吃'}
+        self.owner={'uid':c.OWNER_UID,'sec_uid':c.OWNER_SEC_UID,'nickname':'__OWNER_NICKNAME__'}
         self.receipt_overrides={}
         self.publish_error=None
 
@@ -26,7 +26,7 @@ class FakeBrowser:
         self.published.append((video_id,text))
         self.last_mention_owner=mention_owner
         if mention_owner:
-            full=text+' @搞点饭吃吃'
+            full=text+' @__OWNER_NICKNAME__'
             comment={'cid':'1234567890','text':full,'text_extra':[{'user_id':c.OWNER_UID}],'user':{'uid':c.ACCOUNT_UID}}
         else:
             full=text
@@ -40,7 +40,7 @@ class FakeBrowser:
     def comments(self,video_id,kind='video'):
         mention=getattr(self,'last_mention_owner',True)
         if mention:
-            comment={'cid':'1234567890','text':'这个反差挺有意思。 @搞点饭吃吃',
+            comment={'cid':'1234567890','text':'这个反差挺有意思。 @__OWNER_NICKNAME__',
                 'text_extra':[{'user_id':c.OWNER_UID}],'user':{'uid':c.ACCOUNT_UID}}
         else:
             comment={'cid':'1234567890','text':'这个反差挺有意思。',
@@ -107,7 +107,7 @@ class SharedCommentTests(unittest.TestCase):
         self.queue();api=FakeBrowser()
         api.receipt_overrides['comment']={'text_extra':[]}
         api.receipt_overrides['list']={'status_code':0,'comments':[{'cid':'1234567890',
-            'text':'这个反差挺有意思。 @搞点饭吃吃','text_extra':[],'user':{'uid':c.ACCOUNT_UID}}]}
+            'text':'这个反差挺有意思。 @__OWNER_NICKNAME__','text_extra':[],'user':{'uid':c.ACCOUNT_UID}}]}
         result=c.step(self.db,api)
         self.assertEqual(result['status'],'accepted_unverified');self.assertFalse(result['mention_in_readback'])
 

@@ -3,6 +3,7 @@
   "owner_uid": "1234567890123456",
   "account_uid": "2345678901234567",
   "owner_profile": "/user/REPLACE_WITH_YOUR_SEC_UID",
+  "owner_nickname": "你的抖音昵称（使用评论提及时填写准确）",
   "codex_workspace": "D:/Projects/feiyu-agent",
   "codex_home": null,
   "dsh_home": null,

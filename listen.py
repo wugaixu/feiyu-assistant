@@ -62,7 +62,7 @@ def main():
                         header = page.locator('[data-stack-layer="chat"] .StackLayoutStackChatHeaderuser')
                         if not header.is_visible():
                             page.get_by_role('button', name='私信', exact=True).click(timeout=5000)
-                            contacts = page.locator('[data-e2e="conversation-item"]').filter(has_text='搞点饭吃吃')
+                            contacts = page.locator('[data-e2e="conversation-item"]').filter(has_text='__OWNER_NICKNAME__')
                             contacts.first.wait_for(state='visible', timeout=5000)
                             if contacts.count() != 1:
                                 raise ValueError('Ambiguous owner selection')

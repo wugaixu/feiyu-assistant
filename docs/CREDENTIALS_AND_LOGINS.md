@@ -4,7 +4,7 @@
 
 | 用途 | 人工提供/操作 | 在哪里设置 | 是否必须 |
 |---|---|---|---|
-| 主人、小号身份 | 主人数字 UID、小号数字 UID、主人 `/user/<sec_uid>` | `deployment.local.json` | 抖音通道必须；用于严格身份核验 |
+| 主人、小号身份 | 主人数字 UID、小号数字 UID、主人 `/user/<sec_uid>`；评论提及时补准确owner_nickname | `deployment.local.json` | 抖音通道必须；用于严格身份核验；昵称不代替UID |
 | 抖音私信 | 小号扫码，按平台提示手动完成验证 | 启动SDK后 `<runtime>/sdk-login.png`；状态见管理台 | 使用抖音通道必须 |
 | DouK下载 | 在自己的 DouK 中登录/导入自己的小号 Cookie | `<runtime>/tools/douk-5.8/Volume/settings.json`，由DouK界面保存 | 分享作品下载必须 |
 | 作品评论 | 独立浏览器 profile 登录同一个小号 | 管理台→评论→登录检查 | 仅公开评论需要；SDK登录不能替代 |
