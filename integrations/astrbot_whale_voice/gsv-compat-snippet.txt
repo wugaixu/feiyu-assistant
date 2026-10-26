@@ -1,0 +1,16 @@
+        # Whale compatibility: avoid a failed 60-second auto-TTS request when
+        # the installed plugin has no running model service. Other platforms
+        # and configured/online services retain the user's original behavior.
+        if event.get_platform_name() == "webchat":
+            from app.voice_capabilities import text_only_workflow
+            if text_only_workflow(event.get_message_str()):
+                return
+        if event.get_platform_name() == "webchat" and "[鲸聊语音许可:" in event.get_message_str():
+            import asyncio
+            from app.voice_capabilities import state
+            ready = await asyncio.to_thread(state)
+            if not ready.get("gsv_available"):
+                return
+        cfg = self.cfg.auto
+
+        result = event.get_result()

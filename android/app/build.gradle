@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.dsh.wechat'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+
+    buildFeatures {
+        buildConfig true
+    }
+
+
+    defaultConfig {
+        applicationId "com.dsh.wechat"
+        minSdk 24
+        targetSdk 35
+        versionCode 12
+        versionName "1.5.2"
+    }
+
+    buildTypes {
+        debug {
+            // Configure your own release signing locally. Do not commit keys.
+        }
+        release {
+            // Configure your own release signing locally. Do not commit keys.
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+    // Align kotlin stdlib so stdlib-jdk8 doesn't duplicate classes with stdlib 1.8.22
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+    // 头像/背景裁剪旋转（androidx 原生版，避免旧 support 库冲突）
+    implementation 'com.github.yalantis:ucrop:2.2.8-native'
+    // 录音文件经已配对的鲸聊隧道上传到电脑（OkHttp）
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}

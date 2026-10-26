@@ -1,0 +1,54 @@
+# GPT_SoVITS 插件兼容补丁：按需服务冷启动等待（2026-10-25）
+
+安装位置：`<运行目录>/astrbot/runtime/data/plugins/astrbot_plugin_GPT_SoVITS/main.py`
+目的：语音服务改为按需启动、空闲5分钟退出后，第一句不要因为端口未监听而直接失败。
+市场升级覆盖 main.py 后需要重新应用本片段的两个位置。
+
+## 1. 文件顶部
+
+```python
+import asyncio
+import base64
+import random
+```
+
+## 2. 类内新增方法（放在 `_get_emotion_params` 之前）
+
+```python
+    async def _wait_ready(self, seconds: float = 45.0) -> bool:
+        """Wait briefly for the on-demand local service before failing."""
+        from urllib.parse import urlsplit
+        parts = urlsplit(self.cfg.client.base_url or "")
+        host = parts.hostname or "127.0.0.1"
+        port = parts.port or 9880
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + seconds
+        while True:
+            try:
+                reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=1)
+                writer.close()
+                return True
+            except Exception:
+                if loop.time() >= deadline:
+                    return False
+                await asyncio.sleep(1)
+```
+
+## 3. `gsv_tts` 工具开头
+
+```python
+        try:
+            if not await self._wait_ready():
+                return "本地语音服务正在启动，这次先用文字回复。"
+            params = await self._get_emotion_params(event, message)
+```
+
+## 4. `on_command`（命令“说/gsv”）开头
+
+```python
+        text = event.message_str.partition(" ")[2]
+        if not await self._wait_ready():
+            yield event.plain_result("本地语音服务正在启动，稍后再试。")
+            return
+        res = await self.service.inference(text)
+```

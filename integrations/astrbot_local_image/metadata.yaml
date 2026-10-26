@@ -1,0 +1,6 @@
+name: douyin_local_image
+display_name: 抖音工作流 · 本地千问生图
+desc: 通过本机 ComfyUI 串行生成1–10张图片，支持各张独立描述，持久化排队并由现有抖音SDK发送，无需生图API Key。
+version: 1.1.0
+author: Local workflow
+astrbot_version: ">=4.29.0"

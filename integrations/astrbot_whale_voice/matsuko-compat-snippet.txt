@@ -1,0 +1,8 @@
+        # Whale background jobs can finish after the WebChat SSE closed.
+        # Commit that real audio to its original task instead of an expired SSE.
+        if event.get_platform_name() == "webchat" and "[鲸聊语音许可:" in event.get_message_str():
+            from app.plugin_audio import queue_cover_file
+            if await asyncio.to_thread(queue_cover_file, event, result_path):
+                return
+        if cache_hit:
+            await event.send(event.plain_result(f"⚡ 命中缓存！这首歌松子之前已经唱过啦，直接发给你nya～"))

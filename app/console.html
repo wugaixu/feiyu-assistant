@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.ico">
+<title>抖音私信助手 · 管理台</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--panel2:#1d2129;--line:#282d37;--fg:#e6e9ef;--muted:#8b93a1;
+        --accent:#4c8dff;--ok:#35c46a;--warn:#e0a53b;--bad:#e5544b;--chip:#232938}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 "Microsoft YaHei",system-ui,Segoe UI,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .sp{flex:1}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;vertical-align:middle;margin-right:5px}
+  .dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
+  nav{display:flex;gap:4px;padding:8px 14px 0;flex-wrap:wrap}
+  nav button{background:transparent;border:1px solid transparent;color:var(--muted);padding:7px 13px;border-radius:8px;cursor:pointer;font-size:14px}
+  nav button.active{background:var(--panel2);color:var(--fg);border-color:var(--line)}
+  main{padding:16px 18px 60px;max-width:1180px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card h3{margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.03em}
+  .big{font-size:22px;font-weight:600}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:7px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+  .btn:hover{border-color:#3a4150}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.danger{background:#3a1f1e;border-color:#5a2b28;color:#ffd7d3}
+  .btn.small{padding:4px 9px;font-size:12px}
+  .chip{background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:11px;color:var(--muted);margin-left:6px}
+  .chip.on{background:#12351f;border-color:#1f5a34;color:#8ff0b3}
+  .chip.tgt{background:#16294a;border-color:#2b4f8a;color:#a9c7ff}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+  td.mono,.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted)}
+  .muted{color:var(--muted)}
+  .right{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  pre{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;max-height:440px;font-size:12px;white-space:pre-wrap;word-break:break-all}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:6px 9px;font-size:13px}
+  label.sw{display:flex;align-items:center;gap:8px;padding:7px 0}
+  .hidden{display:none}
+  .toast{position:fixed;right:18px;bottom:18px;background:var(--panel2);border:1px solid var(--line);padding:10px 14px;border-radius:10px;opacity:0;transition:.3s}
+  .toast.show{opacity:1}
+  .tabsrow{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .monitor-head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .monitor-head h2{font-size:20px;margin:0 0 5px}
+  .monitor-head .meta{margin-left:auto;text-align:right;font-size:12px;color:var(--muted)}
+  .stage-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+  .stage{position:relative;display:flex;flex-direction:column;min-height:174px;border-top:3px solid #3a4150}
+  .stage-top{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-bottom:12px}
+  .stage h3{margin:0;color:var(--fg);font-size:14px}
+  .state-badge{font-size:12px;padding:2px 9px;border-radius:99px;white-space:nowrap;background:#242a34;color:#b4bdca}
+  .stage.ready,.stage.idle{border-top-color:#35b87a}.stage.busy{border-top-color:#4c8dff}
+  .stage.note{border-top-color:#54677e}.note .state-badge{background:#222e3b;color:#afc0d3}
+  .review-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+  .review-row select{max-width:100%;font-size:12px}.review-time{font-size:11px;color:var(--muted)}
+  .review-text{white-space:pre-wrap;overflow-wrap:anywhere;max-width:560px}
+  .destination{border:1px solid #2c4d65;background:linear-gradient(120deg,#192b3b,var(--panel));padding:22px;margin-bottom:18px}
+  .destination .provider{font-size:26px;font-weight:700;color:#b8d5ff;margin:6px 0}
+  .destination .session-name{font-size:18px;overflow-wrap:anywhere;margin-bottom:8px}
+  .provider-tabs{display:flex;gap:8px;margin:16px 0}.provider-tabs button{flex:1;text-align:left;padding:14px}
+  .picker select{width:100%;margin:10px 0;padding:8px}
+  .picker select[size]{min-height:90px;max-height:300px}
+  .picker select option{padding:9px;border-radius:5px}.picker input{width:100%;margin-top:10px}
+  .picker-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:14px}
+  .session-advanced{margin-top:18px}.session-advanced summary{cursor:pointer;color:var(--muted)}
+  .session-options{max-height:300px;overflow:auto;margin:12px 0}.candidate{display:flex;align-items:center;gap:8px;padding:8px 0}
+  .stage.warn,.stage.unknown,.stage.blocked{border-top-color:#e0a53b}.stage.error{border-top-color:#e5544b}
+  .ready .state-badge,.idle .state-badge{background:#143523;color:#95e8b8}.busy .state-badge{background:#162d50;color:#adceff}
+  .warn .state-badge,.unknown .state-badge,.blocked .state-badge{background:#3b3019;color:#f2cf8c}.error .state-badge{background:#422322;color:#ffb4ad}
+  .stage .detail{color:var(--muted);font-size:13px;line-height:1.6;flex:1}
+  .stage-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px;font-size:12px;color:var(--muted)}
+  .flow-hint{font-size:12px;color:var(--muted);margin:10px 0 16px;line-height:1.8}
+  .pipeline{margin:12px 0 18px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+  .pipeline-steps{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0}
+  .pipeline-node{padding:9px 12px;border-radius:8px;background:rgba(75,136,255,.08);border:1px solid var(--line);font-size:13px}
+  .pipeline-arrow{color:var(--muted)}
+  .capability-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:14px;margin-top:14px}
+  .capability-grid .card{margin:0!important}
+  .capability-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+  .capability-top h3{margin:0}
+  .capability-facts{display:grid;grid-template-columns:72px minmax(0,1fr);gap:9px 12px;font-size:13px;margin:12px 0}
+  .capability-facts dt{color:var(--muted)}.capability-facts dd{margin:0;overflow-wrap:anywhere}
+  @media(max-width:640px){.monitor-head .meta{margin-left:0;text-align:left}.stage-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>抖音私信助手 · 管理台</h1>
+  <span class="sp"></span>
+  <a id="manual-image-entry" class="btn small" style="text-decoration:none" href="http://127.0.0.1:8189/" target="_blank" rel="noopener noreferrer" title="文字 / 单图 / 多图参考生图；服务未启动时双击桌面“本地千问生图”">手动生图</a>
+  <span id="hstatus" class="muted"></span>
+  <span id="ui-version" class="mono" title="管理台页面版本"></span>
+</header>
+<div id="ui-update" class="card hidden" role="status" style="margin:12px 18px"></div>
+<div id="load-error" class="card hidden" role="alert" style="margin:12px 18px"></div>
+<nav id="nav"></nav>
+<main id="main"></main>
+<div id="toast" class="toast"></div>
+<script>
+const TABS=[["overview","概览"],["sessions","会话投递"],["activity","自主活动"],["tasks","任务"],["comments","评论"],["logs","日志"],["settings","设置"]];
+const UI_REVISION='__UI_REVISION__';
+if(window.__WHALE_REMOTE__)document.getElementById('manual-image-entry')?.classList.add('hidden');
+let current="overview", timer=null, loadSequence=0, settingsDirty=false, commentLoginActive=false;
+try{const saved=sessionStorage.getItem('management-tab');if(TABS.some(([k])=>k===saved))current=saved;}catch{}
+
+const remoteReads=new Map(),remotePending=new Map();let remoteReadEpoch=0,remotePaused=false;
+async function api(path,opts){
+ const key=path,read=!opts||!opts.method||opts.method==='GET',remote=window.__WHALE_REMOTE__;
+ if(remote&&read){const old=remoteReads.get(key);if(old&&Date.now()-old.at<2500)return old.value;if(remotePending.has(key))return remotePending.get(key);}
+ if(!read){remoteReads.clear();remotePending.clear();remoteReadEpoch++;}
+ const epoch=remoteReadEpoch;
+ const job=(async()=>{
+  if(remote)path='/api/wechat/assistant/manage?path='+encodeURIComponent(path)+'&device='+encodeURIComponent(window.__WHALE_REMOTE_DEVICE__||'');
+  const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),15000);
+  try{const r=await fetch(path,{...opts,cache:'no-store',signal:controller.signal});if(!r.ok)throw new Error((await r.json()).error||r.status);const value=await r.json();if(remote&&read&&epoch===remoteReadEpoch)remoteReads.set(key,{at:Date.now(),value});return value;}
+  catch(e){if(e.name==='AbortError')throw new Error('请求超过15秒，请检查管理台服务');throw e;}
+  finally{clearTimeout(timeout);}
+ })();
+ if(remote&&read)remotePending.set(key,job);
+ try{return await job;}finally{if(remotePending.get(key)===job)remotePending.delete(key);}
+}
+const post=(p,b)=>api(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
+function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200);}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function ago(ms){if(!ms&&ms!==0)return"-";const s=Math.floor(ms/1000);if(s<60)return s+"秒前";const m=Math.floor(s/60);if(m<60)return m+"分钟前";const h=Math.floor(m/60);if(h<24)return h+"小时前";return Math.floor(h/24)+"天前";}
+const sid=id=>id?String(id).replace(/^session-/,"").slice(0,8)+"…": "-";
+function dispText(d){d=d||{};const s=d.state||"—";if(s==="error")return `<span style="color:#e5544b">错误 ${esc(d.error_class||"")}</span>`;if(s==="queued")return `已投递 ${esc(sid(d.task_id))}`;return esc(s);}
+
+function renderNav(){document.getElementById("nav").innerHTML=TABS.map(([k,t])=>`<button data-tab="${k}" class="${k===current?'active':''}">${t}</button>`).join("");
+  if(window.__WHALE_REMOTE__)document.querySelector('nav button[data-tab="logs"]')?.remove();
+  document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>openTab(b.dataset.tab));}
+
+function dot(on,warn){return `<span class="dot ${on?'ok':(warn?'warn':'bad')}"></span>`;}
+
+const remoteTabCache=new Map();
+async function load(){clearTimeout(timer);
+  const sequence=++loadSequence, tab=current;
+  try{sessionStorage.setItem('management-tab',tab);}catch{}
+  const el=document.getElementById("main");
+  if(window.__WHALE_REMOTE__&&el.dataset.view!==tab){
+    const cached=remoteTabCache.get(tab);
+    if(cached)el.replaceChildren(...cached.nodes);
+    else{const waiting=document.createElement('div');waiting.className='card muted';waiting.textContent='正在加载…';el.replaceChildren(waiting);}
+    el.dataset.view=tab;
+    if(['settings','activity'].includes(tab))el.oninput=el.onchange=checkSettingsDirty;
+  }
+  const staging=document.createElement('div');
+  try{
+    if(tab==="overview")await renderOverview(staging);
+    else if(tab==="sessions")await renderSessions(staging);
+    else if(tab==="tasks")await renderTasks(staging);
+    else if(tab==="comments")await renderComments(staging);
+    else if(tab==="logs")await renderLogs(staging);
+    else if(tab==="settings")await renderSettings(staging);
+    else if(tab==="activity")await renderActivity(staging);
+    if(sequence!==loadSequence)return;
+    if(window.__WHALE_REMOTE__&&['settings','activity'].includes(tab)&&settingsDirty)return;
+    el.replaceChildren(...staging.childNodes);el.dataset.view=tab;
+    if(window.__WHALE_REMOTE__)remoteTabCache.set(tab,{nodes:[...el.childNodes]});
+    if(staging.dataset.header)document.getElementById('hstatus').innerHTML=staging.dataset.header;
+    document.getElementById('load-error').classList.add('hidden');
+    if(['settings','activity'].includes(tab)){
+      el.querySelectorAll('input,select,textarea').forEach(input=>input.dataset.saved=input.type==='checkbox'?String(input.checked):input.value);
+      settingsDirty=false;el.oninput=el.onchange=checkSettingsDirty;
+    }
+    else{el.oninput=el.onchange=null;}
+  }catch(e){
+    if(sequence!==loadSequence)return;
+    const error=document.getElementById('load-error');
+    error.innerHTML=`本次刷新失败：${esc(e.message)}。下方如有数据为上次成功结果，当前状态待核验。 <button class="btn small" onclick="load()">重试</button>`;
+    error.classList.remove('hidden');document.getElementById('hstatus').textContent='状态未更新';
+  }
+  if(sequence===loadSequence&&!remotePaused&&!['settings','sessions','activity'].includes(current))timer=setTimeout(load,current==='comments'&&commentLoginActive?3000:12000);
+}
+
+function checkSettingsDirty(){
+ settingsDirty=[...document.querySelectorAll('#main input,#main select,#main textarea')].some(input=>input.dataset.saved!==(input.type==='checkbox'?String(input.checked):input.value));
+}
+function savedSettings(ids){
+ ids.forEach(id=>{const input=document.getElementById(id);input.dataset.saved=input.type==='checkbox'?String(input.checked):input.value;});
+ checkSettingsDirty();
+}
+
+function refreshUi(){
+ if(settingsDirty&&!confirm('设置中有编辑内容，重新加载会丢弃尚未保存的修改。继续？'))return;
+ settingsDirty=false;
+ location.reload();
+}
+async function checkUiVersion(){
+ if(remotePaused)return;
+ try{
+  const state=await api('/api/app/ping');
+  if(!state.ui_revision||state.ui_revision===UI_REVISION)return;
+  // Never interrupt a settings form, even before the first input event.
+  if(['settings','activity'].includes(current)){
+   const notice=document.getElementById('ui-update');
+   notice.innerHTML='管理台有新版本。请先保存设置，再重新加载。 <button class="btn small" onclick="refreshUi()">重新加载界面</button>';
+   notice.classList.remove('hidden');
+  }else if(!settingsDirty){location.reload();}
+ }catch{/* Data refresh has its own visible error; never reload on a failed probe. */}
+}
+document.getElementById('ui-version').textContent='界面 '+UI_REVISION.slice(0,6);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkUiVersion();});
+setInterval(checkUiVersion,15000);
+window.addEventListener('message',e=>{
+ if(!window.__WHALE_REMOTE__||e.source!==parent||e.origin!==location.origin||e.data?.type!=='whale-manager-visibility')return;
+ remotePaused=e.data.visible!==true;if(remotePaused)clearTimeout(timer);else if(!settingsDirty)load();
+});
+window.addEventListener('beforeunload',e=>{if(settingsDirty&&['settings','activity'].includes(current)){e.preventDefault();e.returnValue='';}});
+
+async function renderOverview(el){
+  const s=await api("/api/overview");
+  const wf=s.workflow, app=wf.app||{}, sdk=wf.sdk||{}, rec=wf.receiver||{};
+  el.dataset.header=dot(sdk.online)+(sdk.online?"抖音 SDK 在线":"抖音 SDK 离线")+" · "+esc(sdk.nickname||"");
+  const counts=s.counts||{};
+  const taskLabels={done:'已完成',failed:'处理失败',needs_input:'等待补充',pending:'待处理',processing:'处理中',resource_saved:'资料已保存',media_pending:'媒体准备中'};
+  const cchips=Object.keys(counts).length?Object.entries(counts).map(([k,v])=>`<span class="chip">${esc(taskLabels[k]||k)} ${v}</span>`).join(""):'<span class="muted">无</span>';
+  const modules=s.health?.modules||[];
+  const normal=modules.filter(x=>['ready','idle'].includes(x.state)).length, busy=modules.filter(x=>x.state==='busy').length, attention=modules.filter(x=>['warn','error','blocked','unknown'].includes(x.state)).length, off=modules.filter(x=>x.state==='off').length, notes=modules.filter(x=>x.state==='note').length;
+  const checks=new Date((s.health?.checked_at||s.now)*1000).toLocaleTimeString('zh-CN',{hour12:false,timeZone:'Asia/Shanghai'});
+  const resultLabels={not_applicable:'本次素材无需此步骤',done:'已完成',saved:'已保存',partial:'部分完成',failed:'处理失败',unavailable:'暂未取得',no_audio:'没有音轨',no_speech_recognized:'未识别出语音'};
+  const cards=modules.map(x=>`<article class="card stage ${esc(x.state)}" data-stage="${esc(x.id)}"><div class="stage-top"><h3>${esc(x.title)}</h3><span class="state-badge">${esc(x.label)}</span></div><div class="detail">${esc(x.detail)}</div><div class="stage-foot"><span>${esc(String(x.metric||'').replace(/\b(not_applicable|done|saved|partial|failed|unavailable|no_audio|no_speech_recognized)\b/g,key=>resultLabels[key]))}</span><button class="btn small" onclick="openTab('${x.tab}')">查看</button></div></article>`).join('');
+  el.innerHTML=`
+  <div class="monitor-head"><div><h2>工作流运行监测</h2><div class="muted">${normal} 项就绪或待机 · ${busy} 项处理中 · ${attention} 项需关注${notes?` · ${notes} 项检查有备注`:''} · ${off} 项未启用</div></div><div class="meta">最近检查 ${esc(checks)}（北京时间）<br>每12秒刷新 <button class="btn small" onclick="load()">立即刷新</button></div></div>
+  ${workflowFlowHtml(s.target.provider)}
+  <div class="stage-grid">${cards||'<div class="card">监测状态暂不可用</div>'}</div>
+  <p class="muted" style="font-size:12px">${esc(s.health?.note||'')}<br>管理台与工作流守护：运行 ${Math.floor((app.uptime||0)/60)} 分钟 · 服务进程 ${esc(app.pid||'—')}</p>
+  <div class="card" style="margin-top:12px"><h3>任务状态计数</h3><div>${cchips}</div></div>
+  <div class="card" style="margin-top:12px"><h3>工作流控制</h3>
+    <div class="right" style="justify-content:flex-start">
+      <button class="btn primary" onclick="wf('start')">启动工作流</button>
+      <button class="btn" onclick="wf('stop')">停止工作流</button>
+      <button class="btn danger" onclick="quitApp()">关闭程序</button>
+    </div>
+    <div class="muted" style="margin-top:8px">工作流随程序启动而启动、随程序关闭而关闭；关掉管理台窗口只是隐藏到托盘，程序仍在运行。</div></div>`;
+}
+function openTab(tab){
+ if(['settings','activity'].includes(current)&&settingsDirty){
+  if(!confirm('设置有编辑内容，离开会丢弃尚未保存的修改。继续？'))return;
+  settingsDirty=false;remoteTabCache.delete(current);
+ }
+ current=tab;renderNav();load();
+}
+async function wf(a){try{await post("/api/workflow",{action:a});toast("已执行："+a);setTimeout(load,1500);}catch(e){toast("失败："+e.message);}}
+async function quitApp(){if(!confirm("关闭程序？将同时停止工作流并退出托盘。"))return;try{await post("/api/app/quit",{});document.body.innerHTML='<div style="padding:40px;color:#8b93a1">程序已关闭，可关闭此窗口。</div>';}catch(e){toast("失败："+e.message);}}
+
+let pickerProvider=null;
+const PROVIDER_LABEL={codex:"Codex",dsh:"DSH",astrbot:"AstrBot"};
+const ASTRBOT_URL="http://127.0.0.1:6185/";
+function workflowFlowHtml(provider){
+ const name=PROVIDER_LABEL[provider]||'待选择';
+ return `<section class="pipeline"><b>消息如何处理</b><div class="pipeline-steps"><span class="pipeline-node">抖音 SDK / 鲸聊独立网关</span><span class="pipeline-arrow">→</span><span class="pipeline-node">身份核验 · 去重 · 本地队列</span><span class="pipeline-arrow">→</span><span class="pipeline-node">图片 / 视频 / 语音资料整理</span><span class="pipeline-arrow">→</span><span class="pipeline-node">${esc(name)} 分析与回复</span><span class="pipeline-arrow">→</span><span class="pipeline-node">原通道 · 原设备</span></div><div class="muted">视频与图集：DouK 保存作品 → 画面、评论与音频资料 → AI 分析。独立媒体等待 10 秒关联后续文字。<br>语音回复：AstrBot 提供合成文字 → GPT-SoVITS 生成音频 → 鲸聊语音条，可展开原文。<br>作品公开评论是独立发布分支，按授权和开关执行；自主活动通过私信分享作品。日常收发不依赖网页抖音，也不依赖 DSH 进程；仅选择 DSH 处理消息时需要 DSH 在线。</div></section>`;
+}
+function voiceCapabilitiesHtml(voice){
+ if(!voice)return '<section class="card"><h3>语音回复</h3><div class="muted">语音状态暂未取得，请刷新状态。</div></section>';
+ const status=voice.gsv_plugin_disabled?'插件已停用':voice.gsv_available?'服务已连接':voice.gsv_enabled&&voice.gsv_reference_configured?'按需待机，调用时启动':voice.gsv_installed?'插件已安装，配置尚未就绪':'尚未安装插件';
+ const music=voice.music_plugin_disabled?'插件已停用':voice.music_installed?(Object.values(voice.cover_services||{}).some(x=>x==='reachable'||x==='remote_configured')?'插件已启用，至少一个后端可连接':'插件已启用，翻唱后端未在线'):'未安装';
+ return `<section class="card"><div class="capability-top"><h3>语音回复</h3><span class="chip">鲸聊专用</span></div><dl class="capability-facts"><dt>配置音色</dt><dd>${esc(voice.gsv_voice||'以插件配置为准')}</dd><dt>合成服务</dt><dd>GPT-SoVITS · ${esc(status)}</dd><dt>文字展开</dt><dd>点击“查看文字”展开合成原文，再次点击收起</dd><dt>音频上限</dt><dd>${esc((voice.max_audio_seconds||600)/60)} 分钟 · ${esc(voice.max_audio_mb||32)} MiB</dd></dl><div class="muted">AI 决定说什么，独立本地服务合成声音，再由鲸聊发送语音气泡。默认不外放，点击语音条播放；原文随音频保存，不额外识别，也不另发文字气泡。<br>合成服务按需启动，空闲后退出；首次调用需等待模型加载。抖音通道暂不支持原生语音外发。</div><details class="session-advanced"><summary>音乐与翻唱：${esc(music)}</summary><div class="muted">音乐插件与语音合成独立；安装插件不等于翻唱模型已部署，连接状态也不等于已完成合成。</div></details><button class="btn small" style="margin-top:12px" onclick="openAstrbotUi()">打开 AstrBot 配置页</button></section>`;
+}
+async function renderSessions(el){
+ const wanted=pickerProvider||window.__WHALE_PROVIDER__;
+ const deferred={online:false,sessions:[],configs:[],deferred:true};
+ const [channelResult,threadsResult,dResult,aResult]=await Promise.allSettled([api('/api/channels'),api('/api/threads'),window.__WHALE_REMOTE__&&wanted&&wanted!=='dsh'?Promise.resolve(deferred):api('/api/agents/dsh'),window.__WHALE_REMOTE__&&wanted&&wanted!=='astrbot'?Promise.resolve(deferred):api('/api/agents/astrbot')]);
+ if(threadsResult.status!=='fulfilled')throw threadsResult.reason;
+ const channel=channelResult.status==='fulfilled'?channelResult.value:{enabled:false,devices:[],active:{channel:'douyin'},error:channelResult.reason.message};
+ const d=dResult.status==='fulfilled'?dResult.value:{online:false,sessions:[],error:dResult.reason.message};
+ const a=aResult.status==='fulfilled'?aResult.value:{online:false,sessions:[],configs:[],error:aResult.reason.message,url:ASTRBOT_URL};
+ const s=threadsResult.value;
+ const t=s.target,active=t.provider||'codex',browsing=pickerProvider||active;window.__WHALE_PROVIDER__=active;
+ const astr=a.sessions||[],dshList=d.sessions||[];
+ const title=active==='codex'?t.effective_title:active==='dsh'?(dshList.find(x=>x.id===t.effective)||{}).title:(t.effective_title||(astr.find(x=>x.id===t.effective)||{}).title);
+ const outside=active==='codex'&&!s.threads.some(x=>x.id===t.effective);
+ const list=browsing==='codex'?s.threads:browsing==='dsh'?dshList:astr;
+ const activeNote=active==='dsh'?'固定 DSH 会话':active==='astrbot'?`固定 AstrBot 会话 · 人设配置 ${esc(t.astrbot_config_id||'default')}`:(t.mode==='explicit'?'固定 Codex 会话':'Codex 自动跟随候选中的最近活跃会话');
+ const astrHead=browsing==='astrbot'?`<div class="review-row" style="justify-content:flex-start"><b style="color:${a.online?'var(--ok)':'var(--bad)'}">${a.online?'AstrBot 已连接':'AstrBot 未连接'}</b>${a.online?'':`<button class="btn small" onclick="startAstrbot(this)">启动 AstrBot 服务</button>`}<span class="muted">${esc(a.error||'在 AstrBot 页面可添加插件、编辑人设与模型提供商。')}</span></div>`:'';
+ const image=a.local_image||{};
+ const imageJobs=Object.entries(image.jobs||{}).map(([k,v])=>`${({queued:'排队',starting:'启动中',submitting:'提交中',running:'生成中',ready:'等待私聊回复',outbox_queued:'已进图片发送队列',failed:'生成失败',outcome_uncertain:'结果待查',needs_attention:'需关注'})[k]||k} ${v}`).join(' · ');
+ const imageBatches=(image.batches||[]).map((b,i)=>`第${i+1}个近期批次：${b.total}张，已入发送队列${b.queued_to_outbox}张，待处理${b.remaining}张${b.problems?`，异常${b.problems}张`:''}`).join('；');
+ const astrExtra=browsing==='astrbot'?`<div class="capability-grid"><div class="card" style="margin-top:12px"><b>本地千问生图 · 无需 API Key</b><div class="muted">${image.enabled?'已启用':'已暂停'} · ${image.backend_online?'生图后端在线':'按需启动，待机时释放模型'} · ${image.max_batch_images?`单批1–${image.max_batch_images}张，逐张生成、逐张发送`:'待重启管理台，当前仅单张'}</div><div class="muted">${esc(imageJobs||'暂无生图任务')}</div><div class="muted">${esc(imageBatches)}</div>${image.error?`<div class="muted">最近异常：${esc(image.error)}</div>`:''}<button class="btn small" onclick="toggleLocalImage(${!image.enabled})">${image.enabled?'暂停本地生图':'启用本地生图'}</button></div>${voiceCapabilitiesHtml(a.voice)}</div><label class="muted" style="display:block;margin-top:10px">人设/配置 <select id="astrbot-config">${(a.configs||[]).map(c=>`<option value="${esc(c.id)}" ${(t.astrbot_config_id||'default')===c.id?'selected':''}>${esc(c.name||c.id)}</option>`).join('')}</select></label>
+ <div class="review-row" style="justify-content:flex-start;margin-top:8px"><input id="astrbot-new-session" maxlength="60" placeholder="新会话名称，例如 抖音私信"><button class="btn small" onclick="createAstrbotSession()">新建 AstrBot 会话</button></div>`:'';
+ whaleDevices=whaleDeviceChoices(channel);setTimeout(showWhaleDevice,0);
+ el.innerHTML=`<section class="card"><h3>私信通道</h3><div class="muted">${esc(channel.note||channel.error||'主动消息可选择通道，普通回复始终返回来源设备。')}</div><p>当前主动发送：<b>${channel.active?.channel==='whale'?'鲸聊 App':'抖音'}</b> · 鲸聊${channel.enabled?'已启用':'已暂停'}${channel.standalone?(channel.gateway_online?' · 独立服务在线':' · 独立服务未连接'):' · 待独立服务加载'} · 手机管理${channel.remote_management?'已开放':'已关闭'}</p><div class="review-row" style="justify-content:flex-start"><button class="btn" onclick="setChannel('douyin')">主动消息发往抖音</button><select id="whale-device" aria-label="鲸聊设备" onchange="showWhaleDevice()" style="max-width:100%;min-width:220px">${whaleDeviceChoices(channel).map(d=>`<option value="${esc(d.id)}" ${channel.active?.device===d.id?'selected':''}>${esc(d.name)}${(channel.current_device===d.id||d.pairings?.some(x=>x.id===channel.current_device))?' · 本机':''}${channel.active?.device===d.id?' · 接收主动消息':''}</option>`).join('')}</select><button class="btn small" onclick="renameWhaleDevice()" ${!channel.devices?.length?'disabled':''}>备注设备名</button><button class="btn" ${!channel.enabled||!channel.devices?.length?'disabled':''} onclick="setChannel('whale')">主动消息发往鲸聊</button></div><p class="muted" id="whale-device-detail"></p><div class="review-row" style="justify-content:flex-start"><button class="btn small" onclick="channelSetting('enabled',${!channel.enabled})">${channel.enabled?'暂停鲸聊通道':'启用鲸聊通道'}</button><button class="btn small" onclick="channelSetting('remote_management',${!channel.remote_management})">${channel.remote_management?'关闭手机管理':'允许手机管理'}</button>${window.__WHALE_REMOTE__?'':'<button class="btn small" onclick="channelSetting(\'sync_paired\',true)">同步新配对设备</button>'}</div>${!window.__WHALE_REMOTE__&&channel.pairing_url?`<a class="btn small" style="display:inline-block;text-decoration:none;margin-top:8px" href="${esc(channel.pairing_url)}" target="_blank" rel="noopener noreferrer">打开鲸聊配对面板</a>`:''}<div class="muted">收到主人新消息后，主动发送通道自动跟随来源。每条私聊、图片和语音始终回到原设备，不受随后切换影响。鲸聊网关独立运行，通过配对设备收发消息，与选择哪一种 AI 无关。AstrBot 可调用 GPT-SoVITS 生成语音；点击语音条播放，点击“查看文字”展开合成原文，不会自动外放。</div></section><section class="card destination"><div class="muted">当前生效 · 新私信将投递到</div>
+ <div class="provider">${PROVIDER_LABEL[active]||esc(active)}</div><div class="session-name">${esc(title||'会话暂不可核对')}</div>
+ <div class="muted">${activeNote}${outside?' · 当前会话不属于 Work 1 可选范围，请重新选择':''}</div>
+ <details style="margin-top:8px"><summary class="muted">会话编号</summary><div class="mono">${esc(t.effective||'未配置')}</div></details>
+ <div class="right" style="justify-content:flex-start;margin-top:12px"><button class="btn small" onclick="load()">刷新状态与列表</button><button class="btn small" onclick="openAstrbotUi()">打开 AstrBot 配置页（Ctrl+Alt+A）</button></div></section>
+ <section class="card picker"><h3>AI 处理主体与会话</h3><div class="muted">先选择 Codex、DSH 或 AstrBot，再选择会话并应用。这里切换的是负责思考和回复的 AI，不会改变收信通道或已投递任务的回复去向。</div>
+ <div class="provider-tabs"><button class="btn ${browsing==='codex'?'primary':''}" onclick="pickProvider('codex')">Codex · Work 1（${s.threads.length}）</button><button class="btn ${browsing==='dsh'?'primary':''}" onclick="pickProvider('dsh')">DSH${d.deferred?'':'（'+dshList.length+'）'}</button><button class="btn ${browsing==='astrbot'?'primary':''}" onclick="pickProvider('astrbot')">AstrBot${a.deferred?'':'（'+(a.online?astr.length:'未连接')+'）'}</button></div>
+ ${astrHead}
+ <div class="muted">${browsing==='codex'?'仅显示 Work 1 项目内未归档会话，按最近活跃排序。':browsing==='dsh'?(d.online?'DSH 已连接；下列为 DSH 自己的会话。':'DSH 未连接，请先打开 DSH。'):'下列为本地连接器可用的 AstrBot 会话；新建后首条消息时在 AstrBot 内建立。'}</div>
+ <input id="session-search" aria-label="搜索会话标题" placeholder="搜索会话标题…">
+ <select id="session-choice" aria-label="待切换的会话" size="${Math.min(6,Math.max(2,list.length))}">${list.map(x=>`<option value="${esc(x.id)}" ${x.available===false?'disabled':''} ${browsing===active&&x.id===t.effective?'selected':''}>${esc(x.title||'未命名会话')}${x.available===false?' · 原 Agent 预设不可用':''}${browsing===active&&x.id===t.effective?' · 当前使用':''}</option>`).join('')}</select>
+ ${astrExtra}
+ <div id="session-preview" class="muted"></div>
+ <div class="picker-footer"><span class="muted">只影响尚未投递的新任务；不改变资源目录。</span><button id="apply-session" class="btn primary">切换到所选 ${PROVIDER_LABEL[browsing]} 会话</button></div></section>
+ <details class="card session-advanced"><summary>高级：Codex 自动跟随与候选范围</summary><p class="muted">固定会话请使用上方切换。自动跟随仅在勾选的 Work 1 候选之间选择最近活跃会话；DSH 与 AstrBot 使用固定会话。</p>
+ <div class="session-options">${s.threads.map(x=>`<label class="candidate"><input type="checkbox" ${t.candidates.includes(x.id)?'checked':''} onchange="tgt(this.checked?'candidate_add':'candidate_remove','${x.id}')">${esc(x.title)}</label>`).join('')}</div>
+ <button class="btn" onclick="tgt('auto')">${active==='codex'?'将 Codex 改为自动跟随':'保存 Codex 自动跟随规则（当前仍用 '+PROVIDER_LABEL[active]+'）'}</button></details>`;
+ const search=el.querySelector('#session-search'),choice=el.querySelector('#session-choice'),apply=el.querySelector('#apply-session'),preview=el.querySelector('#session-preview');
+ const configSelect=el.querySelector('#astrbot-config');
+ const show=()=>{
+  const selected=list.find(x=>x.id===choice.value);
+  apply.disabled=!selected||(browsing==='astrbot'&&!a.online);
+  preview.textContent=selected?`已选择：${selected.title}${browsing==='astrbot'?` · 人设配置 ${configSelect?configSelect.value:'default'}`:''}`:(browsing==='astrbot'&&!a.online?'AstrBot 未连接：请先点击「启动 AstrBot 服务」':'没有匹配会话');
+ };
+ search.oninput=()=>{const old=choice.value;choice.innerHTML=list.filter(x=>(x.title||'').toLowerCase().includes(search.value.trim().toLowerCase())).map(x=>`<option value="${esc(x.id)}" ${x.id===old?'selected':''}>${esc(x.title)}</option>`).join('');show();};
+ choice.onchange=show;apply.onclick=()=>agent(browsing,choice.value,configSelect?configSelect.value:null);show();
+}
+function pickProvider(provider){pickerProvider=provider;load();}
+async function toggleLocalImage(enabled){try{await post('/api/local-image',{enabled});toast(enabled?'本地生图已启用':'已暂停新生图；已受理任务继续处理');load();}catch(e){toast('设置失败：'+e.message);}}
+
+async function tgt(a,id){try{await post("/api/target",{action:a,thread_id:id});toast("已更新投递目标");load();}catch(e){toast("失败："+e.message);}}
+async function agent(provider,id,configId){try{await post("/api/agent",{provider,session_id:id,config_id:configId||null});toast("已切换消息处理主体");load();}catch(e){toast("失败："+e.message);}}
+
+async function startAstrbot(button){
+ button.disabled=true;
+ try{const r=await post('/api/astrbot/start',{});toast(r.ok?'AstrBot 已启动':'AstrBot 启动未完成：'+(r.error||'请查看服务日志'));load();}
+ catch(e){toast('启动失败：'+e.message);button.disabled=false;}
+}
+async function createAstrbotSession(){
+ const input=document.getElementById('astrbot-new-session'),title=(input&&input.value||'').trim();
+ if(!title){toast('请填写会话名称');return;}
+ try{const r=await post('/api/astrbot/session',{title});toast('已新建会话：'+r.session.title);load();}
+ catch(e){toast('新建失败：'+e.message);}
+}
+let whaleDevices=[];
+function whaleDeviceChoices(channel){
+ if(channel.device_groups)return channel.device_groups;
+ const groups=new Map();
+ for(const d of channel.device_info||(channel.devices||[]).map((id,i)=>({id,name:'未命名设备 '+(i+1)}))){
+  const key=d.display_group||(d.model?[d.platform,d.model,d.custom_name||''].join('|'):d.id);
+  if(!groups.has(key))groups.set(key,[]);groups.get(key).push(d);
+ }
+ return [...groups.values()].map(items=>{
+  items.sort((a,b)=>(b.last_seen||0)-(a.last_seen||0));
+  const d=items.find(x=>x.id===channel.active?.device)||items[0];
+  return {...d,pairings:items,pairing_count:items.length,last_seen:items[0].last_seen};
+ });
+}
+function showWhaleDevice(){
+ const el=document.getElementById('whale-device-detail'),id=document.getElementById('whale-device')?.value;
+ if(!el)return;const d=whaleDevices.find(x=>x.id===id);
+ el.textContent=d?`${d.platform}${d.model?' · '+d.model:''} · 最近使用：${d.last_seen?new Date(d.last_seen*1000).toLocaleString('zh-CN'):'暂无记录'}。${d.pairing_count>1?`已折叠 ${d.pairing_count} 条同机型配对记录；保留各自历史和回复地址。`:''}可备注成“我的手机”或“备用手机”，备注不影响消息路由。`:'设备尚未提供机型信息，可以先添加备注。';
+}
+async function renameWhaleDevice(){
+ const id=document.getElementById('whale-device')?.value,d=whaleDevices.find(x=>x.id===id);
+ if(!id)return;const name=prompt('给这台设备添加便于辨认的名称（1–30字）',d?.custom_name||d?.name||'我的手机');
+ if(name===null)return;
+ try{await post('/api/channels',{rename_device:id,device_name:name});toast('设备备注已保存');load();}catch(e){toast(e.message);}
+}
+async function setChannel(channel){try{const device=document.getElementById('whale-device')?.value;await post('/api/channels',{channel,...(channel==='whale'?{device}: {})});toast('主动发送通道已切换');load();}catch(e){toast(e.message);}}
+async function channelSetting(key,value){try{await post('/api/channels',{[key]:value});load();}catch(e){toast(e.message);}}
+function openAstrbotUi(){
+ if(window.__WHALE_REMOTE__){toast('插件、模型凭据和登录操作请在电脑上配置');return;}
+ const win=window.open('about:blank','astrbot-ui');
+ try{if(win)win.location.href=ASTRBOT_URL;}catch(e){}
+ post('/api/astrbot/start',{}).then(r=>{if(r&&r.ok===false)toast(r.error||'AstrBot 启动未完成，请查看服务日志');})
+  .catch(()=>toast('管理台尚未载入 AstrBot 接口，请重启管理台'));
+}
+document.addEventListener('keydown',e=>{if(e.altKey&&(e.ctrlKey||e.metaKey)&&String(e.key||'').toLowerCase()==='a'){e.preventDefault();openAstrbotUi();}});
+
+async function renderTasks(el){
+  const s=await api("/api/tasks");
+  const outbound=await api('/api/outbound');
+  const statusLabel=x=>({server_accepted:'平台接受，收件未确认',outcome_uncertain:'发送结果待核验',platform_not_accepted:'平台明确拒绝',pending:'等待发送',attempted:'已尝试，结果未定'}[x]||x);
+  const sends=outbound.items.map(x=>`<tr><td class="mono">${esc(sid(x.task_id))}</td><td><span class="chip">${esc(({text:'文字',image:'图片',audio:'语音',share:'作品分享'})[x.kind]||'其他附件')}</span><div class="review-time">${x.channel==='whale'?'鲸聊':'抖音'}</div></td><td>${esc(x.channel==='whale'&&x.status==='server_accepted'?'已写入鲸聊历史，接收未确认':statusLabel(x.status))}${x.channel!=='whale'?`<div class="review-time">校验码 ${esc(x.check_code??'—')}</div>`:''}</td><td class="review-text">${outboundContentHtml(x)}</td><td>${esc(x.assessment?.detail||'自动检查中')}</td></tr>`).join('');
+  const chips=Object.entries(s.counts||{}).map(([k,v])=>`<span class="chip">${esc(k)} ${v}</span>`).join("")||'<span class="muted">无</span>';
+  const rows=s.items.map(x=>`<tr><td class="mono">${sid(x.id)}</td><td>${esc(x.kind||"-")}</td><td>${esc(x.status)}</td><td class="muted">${esc(x.text)}</td></tr>`).join("");
+  el.innerHTML=`<div class="card"><h3>状态计数</h3><div>${chips}</div></div>
+  <div class="card" style="margin-top:12px;padding:0"><table><thead><tr><th>任务</th><th>类型</th><th>状态</th><th>内容预览</th></tr></thead><tbody>${rows||'<tr><td colspan=4 class="muted">无</td></tr>'}</tbody></table></div>
+  <div class="card" style="margin-top:12px"><h3>私信发送 · 自动检查</h3><p class="muted">最近 ${esc(outbound.window||30)} 条发送记录，包含文字、图片、语音和作品分享。程序结合各通道回执与已有反馈自动判断；写入历史或平台接受不等于接收端收到，结果不明不自动重发。</p><table><thead><tr><th>任务</th><th>消息类型</th><th>发送回执</th><th>消息内容</th><th>自动判断依据</th></tr></thead><tbody>${sends||'<tr><td colspan="5">无发送记录</td></tr>'}</tbody></table></div>`;
+}
+
+function outboundContentHtml(item){
+ const file=item.file_name?`<div class="review-time">${esc(item.file_name)}</div>`:'';
+ if(item.kind==='audio')return `语音附件${file}${item.text?`<details><summary>查看原文</summary><div>${esc(item.text)}</div></details>`:'<div class="muted">未保存原文</div>'}`;
+ if(item.kind==='image')return `图片附件${file}`;
+ if(item.kind==='share')return esc(item.work_title||'作品分享');
+ return esc(item.text||'（无文字内容）');
+}
+
+async function renderComments(el){
+  const [s,login]=await Promise.all([api('/api/comments'),api('/api/comment-login')]);
+  commentLoginActive=['checking','needs_login','wrong_account'].includes(login.state);
+  const loginLabels={not_checked:'尚未检查',checking:'检查中',logged_in:'已登录',needs_login:'请登录',wrong_account:'账号不匹配',busy:'浏览器使用中',window_closed:'窗口已关闭',error:'检查未完成',stopped:'已停止'};
+  const o=s.outbox.map(x=>`<tr><td><a style="color:var(--accent)" href="https://www.douyin.com/video/${encodeURIComponent(x.video_id)}" target="_blank" rel="noopener noreferrer">打开作品 ↗</a><div class="mono">${esc(x.video_id)}</div><div class="review-time">${esc(x.day)}</div></td><td>${esc(x.status)}</td><td class="review-text">${esc(x.text)}</td><td>${esc(x.assessment?.detail||'自动检查中')}</td></tr>`).join("");
+  const l=s.legacy.map(x=>`<tr><td class="mono">${esc(x.video_id)}</td><td>${esc(x.status)}</td><td class="muted">${esc(x.day)}</td></tr>`).join("");
+  el.innerHTML=`<section class="card" style="margin-bottom:16px"><h3>抖音主站登录 · 评论发布专用</h3><div class="picker-footer"><div><b>${esc(loginLabels[login.state]||'尚未检查')}${login.nickname?' · '+esc(login.nickname):''}</b><div class="muted" style="margin-top:6px">${esc(login.message)}</div></div><button id="check-comment-login" class="btn primary" onclick="checkCommentLogin(this)" ${login.state==='checking'?'disabled':''}>${login.window_open?'完成登录后，重新检查':'检查抖音主站登录'}</button></div><p class="muted" style="margin-bottom:0">检查的是网页主站发布账号，与抖音聊天 SDK 分开。未登录时会显示专用抖音窗口，请手动登录小号；确认登录后自动收起并保留登录资料。检查本身不发评论、不发送验证码。</p>${login.checked_at?`<div class="review-time" style="margin-top:8px">最近检查：${esc(new Date(login.checked_at*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}))}</div>`:''}</section>
+  <div class="card" style="padding:0"><div style="padding:12px 14px"><b>评论发布 · 自动检查</b><p class="muted">程序根据发布回执、评论回读和已有反馈判断，无需人工核验。平台接受与主人实际收到 @ 通知仍分别记录。</p></div>
+    <table><thead><tr><th>作品</th><th>平台回执</th><th>评论正文</th><th>自动判断依据</th></tr></thead><tbody>${o||'<tr><td colspan=4 class="muted">无</td></tr>'}</tbody></table></div>
+  <div class="card" style="margin-top:12px;padding:0"><div style="padding:12px 14px 4px"><b>历史评论（旧浏览器模块）</b></div>
+    <table><thead><tr><th>作品ID</th><th>状态</th><th>日期</th></tr></thead><tbody>${l||'<tr><td colspan=3 class="muted">无</td></tr>'}</tbody></table></div>`;
+}
+
+async function checkCommentLogin(button){
+ button.disabled=true;
+ try{await post('/api/comment-login',{});load();}
+ catch(e){toast('登录检查未启动：'+e.message);button.disabled=false;}
+}
+
+async function renderLogs(el){
+  const s=await api("/api/logs");
+  const names=Object.keys(s);
+  el.innerHTML=`<div class="tabsrow"><select id="logsel">${names.map(n=>`<option>${esc(n)}</option>`).join("")}</select>
+    <button class="btn small" onclick="load()">刷新</button></div><pre id="logpre"></pre>`;
+  const sel=el.querySelector("#logsel"),pre=el.querySelector("#logpre");
+  const show=()=>{pre.textContent=s[sel.value]||"(空)";};
+  sel.onchange=show;show();
+}
+
+async function renderSettings(el){
+  const [s,storage]=await Promise.all([api("/api/overview"),api('/api/storage')]);const rs=storage.config;
+  const p=s.policies||{};
+  const sc=p.shared_comment||{}, vr=p.video_round||{}, dm=p.dm||{};
+  const sw=(id,label,on)=>`<label class="sw"><input type="checkbox" id="${id}" ${on?"checked":""}> ${label}</label>`;
+  el.innerHTML=`
+  <div class="card"><h3>公开作品评论</h3>
+    ${sw("sc_enabled","启用主人分享作品的公开评论",sc.enabled===true)}
+    ${sw("sc_mention","公开评论 @主人",sc.mention_owner!==false)}
+    <label class="sw">每日上限 <input id="sc_limit" type="number" min="0" max="50" value="${esc(sc.daily_limit??10)}" style="width:80px"></label>
+    <button class="btn primary" onclick="saveSC()">保存</button>
+    <div class="muted" style="margin-top:8px">关闭 @主人 后只发表评论正文，不生成主人提及、也不把主人通知计入验收；历史评论不改变。发布只经真实浏览器，一条作品最多一次，结果不明不重发。</div></div>
+  <div class="card" style="margin-top:12px"><h3>随机选片与主动聊天</h3><p class="muted">自动推荐通过私信分享作品卡片和看法，不进入公开评论。随机时段、每日额度、免打扰与活动记录在独立页面维护。</p><button class="btn primary" onclick="openTab('activity')">管理自主活动</button></div>
+  <div class="card" style="margin-top:12px"><h3>私信发送</h3>
+    ${sw("dm_enabled","启用自动回复发送",dm.enabled!==false)}
+    <label class="sw">最小发送间隔（秒） <input id="dm_gap" type="number" min="0" max="3600" value="${esc(dm.min_send_gap_seconds??10)}" style="width:90px"></label>
+    <button class="btn primary" onclick="saveDM()">保存</button></div>
+  <div class="card" style="margin-top:12px"><h3>AstrBot 接入</h3>
+    <div class="muted">当前处理主体：${esc(PROVIDER_LABEL[s.target.provider]||s.target.provider)}${s.target.provider==='astrbot'?` · 会话 ${esc(s.target.effective_title||s.target.effective||'未选择')}`:''}</div>
+    <div class="right" style="justify-content:flex-start;margin-top:10px"><button class="btn" onclick="openAstrbotUi()">打开 AstrBot 配置页（Ctrl+Alt+A）</button><button class="btn small" onclick="openTab('sessions')">切换处理主体</button></div>
+    <div class="muted" style="margin-top:8px">插件、人设、模型提供商在 AstrBot 页面操作；管理台只保存所选会话与人设配置，不读取密钥。选中 AstrBot 后由管理台保活服务。</div>
+    <div class="muted" style="margin-top:8px">回复空行或 <span class="mono">[[分条]]</span> 会拆成多条私信；支持已批准图片与插件图片段。当前最小发送间隔 ${esc(dm.min_send_gap_seconds??1)} 秒；语音发送尚未接通。</div></div>
+  <div class="card" style="margin-top:12px"><h3>资源保存位置</h3>
+    <label>资源根目录 <input id="res_base" value="${esc(rs.base)}" style="width:100%;margin:8px 0"></label>
+    <div class="muted">请选择 __TEMP_PARENT__ 下的独立文件夹。修改只影响新资源，旧文件不迁移，原路径仍可读取和清理。</div>
+    <div style="margin:10px 0">${Object.entries(storage.paths).map(([k,p])=>`<div>${esc(storage.labels[k])}：<span class="mono">${esc(p)}</span></div>`).join('')}</div>
+    <div class="muted">任务数据库、账号登录、工具、日志、replies仍在 ${esc(storage.runtime)}，不纳入此次资源清理；outgoing-images（已发送图片缓存）已纳入下面的清理类别。历史资源根目录：${esc(storage.previous_bases.join('；')||'无额外历史目录')}</div></div>
+  <div class="card" style="margin-top:12px"><h3>定期清理</h3>
+    ${sw('res_enabled','启用过期资源定期删除',rs.cleanup_enabled)}
+    <label class="sw">保留天数 <input id="res_days" type="number" min="1" max="3650" value="${rs.retention_days}" style="width:90px"></label>
+    <label class="sw">每隔多少小时检查 <input id="res_hours" type="number" min="1" max="720" value="${rs.interval_hours}" style="width:90px"></label>
+    <div>${Object.keys(storage.labels).map(k=>sw('res_cat_'+k,esc(storage.labels[k]),rs.categories.includes(k))).join('')}</div>
+    <p class="muted">只删除超过保留期、且对应任务已完成或失败的已登记资源。待处理任务、待发送回复/评论及共用的活动资源受保护；未完成的图片、正在发送的图片与手工放入的文件不删。工作流忙碌时延期。不删除聊天数据库、登录、工具、备份或未登记文件。仅在管理台应用运行时检查。</p>
+    <button class="btn primary" onclick="saveResources()">保存路径及清理设置</button>
+    <button class="btn" onclick="previewCleanup()">预览当前规则可清理资源</button>
+    <div class="muted" style="margin-top:10px">下次检查（北京时间）：${rs.next_run_at?new Date(rs.next_run_at*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'未启用'}；最近结果：${esc(storage.last_cleanup.state||'未执行')}，删除${storage.last_cleanup.deleted?.length||0}项，跳过${storage.last_cleanup.skipped?.length||0}项（占用、变更等会保留）</div>
+    <div id="cleanup_preview" style="margin-top:12px"></div></div>`;
+}
+let cleanupToken=null,cleanupSummary=null;
+async function saveResources(){try{
+ const enabled=document.getElementById('res_enabled').checked;
+ if(enabled&&!confirm('启用后将按所选周期删除超过保留期的已结束任务资源，删除后不可恢复。确认保存并启用？'))return;
+ await post('/api/storage',{config:{base:document.getElementById('res_base').value,cleanup_enabled:enabled,retention_days:Number(document.getElementById('res_days').value),interval_hours:Number(document.getElementById('res_hours').value),categories:['media','analysis','content','context','outgoing'].filter(k=>document.getElementById('res_cat_'+k).checked)},confirm_cleanup:enabled});
+ toast('已保存；旧文件不迁移');load();
+}catch(e){toast('失败：'+e.message);}}
+async function previewCleanup(){try{
+ const p=await post('/api/storage/preview',{});cleanupToken=p.token;cleanupSummary=p;
+ document.getElementById('cleanup_preview').innerHTML=`<b>按已保存规则预览：${p.directories}项资源，共${(p.bytes/1048576).toFixed(2)} MiB</b><pre style="max-height:200px;overflow:auto">${esc(p.items.map(x=>x.path).join('\n')||'暂无符合条件的资源')}</pre>${p.directories?'<button class="btn danger" onclick="runCleanup()">确认清理此预览</button>':''}`;
+}catch(e){toast('预览失败：'+e.message);}}
+async function runCleanup(){try{
+ if(!cleanupToken||!confirm(`确认删除预览中的${cleanupSummary.directories}个目录（${(cleanupSummary.bytes/1048576).toFixed(2)} MiB）？此操作不可恢复。`))return;
+ const r=await post('/api/storage/cleanup',{token:cleanupToken,confirmed:true});cleanupToken=null;
+ toast(r.state==='deferred_busy'?'任务处理中，本次未删除，请空闲时重新预览':`已清理${r.deleted.length}个目录，跳过${r.skipped.length}个`);load();
+}catch(e){toast('清理失败：'+e.message);}}
+async function saveSC(){try{await post("/api/policy",{name:"shared_comment",patch:{enabled:document.getElementById("sc_enabled").checked,mention_owner:document.getElementById("sc_mention").checked,daily_limit:Number(document.getElementById("sc_limit").value)}});savedSettings(['sc_enabled','sc_mention','sc_limit']);toast("已保存");}catch(e){toast("失败："+e.message);}}
+async function saveVR(){try{await post("/api/policy",{name:"video_round",patch:{enabled:document.getElementById("vr_enabled").checked,auto_comment:document.getElementById("vr_comment").checked}});savedSettings(['vr_enabled','vr_comment']);toast("已保存");}catch(e){toast("失败："+e.message);}}
+async function saveDM(){try{await post("/api/policy",{name:"dm",patch:{enabled:document.getElementById("dm_enabled").checked,min_send_gap_seconds:Number(document.getElementById("dm_gap").value)}});savedSettings(['dm_enabled','dm_gap']);toast("已保存");}catch(e){toast("失败："+e.message);}}
+
+function activityTime(value){return value?new Date(value*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'当天暂无后续计划';}
+let activityConfig=null;
+async function renderActivity(el){
+ const s=await api('/api/activity'),c=s.config;activityConfig=c;const activityBackendReady=Object.prototype.hasOwnProperty.call(c,'proactive_mode')&&s.count_limits?.daily_max===null;
+ const field=(id,label,value,min,max)=>`<label class="sw">${label} <input id="${id}" type="number" min="${min}" ${max==null?'':`max="${max}"`} value="${value}" style="width:132px;min-width:132px;flex:0 0 132px;padding:9px 12px;font-size:15px"></label>`;
+ const toggle=(id,label,on)=>`<label class="sw"><input id="${id}" type="checkbox" ${on?'checked':''}>${label}</label>`;
+ const status={attempted:'处理中',done:'已完成',deferred:'智能体决定暂不联系',skipped:'已跳过',unavailable:'未能取得内容',outcome_uncertain:'结果待检查'};
+ const runtime={waiting:'等待下一次活动检查',busy:'私信或任务处理中，活动延后',requires_astrbot:'需在会话投递中选择 AstrBot',astrbot_offline:'AstrBot 尚未连接',sdk_offline:'抖音聊天尚未连接',sdk_update_required:'SDK需加载作品分享模块',started:'正在处理活动',skipped:'本次已跳过',error:'调度检查异常'};
+ const reasons={awaiting_owner_reply:'等待主人回复，不追发',recent_conversation:'刚聊过，暂不打扰',minimum_gap:'未到最小间隔',random_skip:'本次随机跳过',expired:'已过时段',provider_changed:'处理主体已切换',daily_share_quota:'今日分享额度已用完',window_quota:'本时段视频额度已用完'};
+ const jobs=s.jobs.map(j=>{let r={};try{r=JSON.parse(j.result||'{}');}catch{}return `<tr><td>${j.kind==='browse'?'刷视频选片':'主动聊天'}<div class="review-time">${esc(activityTime(j.created))}</div></td><td>${esc(status[j.status]||j.status)}</td><td>${esc(reasons[r.reason]||r.reason||r.error_class||(r.share_queued?'作品卡片及文字已入发送队列':r.reply_queued?'文字已入发送队列':''))}</td></tr>`;}).join('');
+ el.innerHTML=`<section class="card"><h3>自主活动 · AstrBot</h3>${activityBackendReady?'':'<p style="color:var(--warn)">新版后端等待正常重启，当前仍按旧规则运行，重启后可保存新模式与次数范围。</p>'}<p class="muted">仅在管理台应用运行且处理主体为 AstrBot 时调度。北京时间；重启保留计划，错过时段不补跑。收信和回复优先；这里只发私信，不发布评论或 @。</p><p>${esc(runtime[s.runtime?.state]||'等待调度器检查')}</p><div class="review-row"><span>下次选片：${esc(activityTime(s.plans.browse?.pending?.at))}</span><span>下次主动联系判断：${esc(activityTime(s.plans.proactive?.pending?.at))}</span></div><button class="btn small" onclick="load()">刷新活动状态</button></section>
+ <section class="card" style="margin-top:12px"><h3>随机刷推荐视频 → 私信分享</h3>${toggle('act_browse','启用按时段随机选片',c.browse_enabled)}<p class="muted">普通抖音账号推荐流，不使用关键词搜索。按需读取隐藏的主站窗口，验证失败暂停该次活动。下载、抽帧及音频处理后，由 AstrBot 依据实际素材筛选娱乐/搞笑作品；没有合适作品就不发。</p><label>每行：开始时间–结束时间 | 最多分析视频数 | 最多唤醒次数<textarea id="act_windows" rows="4" style="display:block;width:100%;margin:8px 0">${esc(c.windows.map((w,i)=>`${w[0]}-${w[1]} | ${c.window_limits[i]} | ${c.window_wakes[i]}`).join('\n'))}</textarea></label>${field('act_perwake','每次最多分析',c.max_per_wake,1,5)}${field('act_shares','每天最多分享',c.daily_shares,1,10)}<p class="muted">今天已预留分析 ${s.videos_today} 个；每次最多分享一条有内容依据的作品。失败或结果不明不重发。</p></section>
+ <section class="card" style="margin-top:12px"><h3>不定时主动联系</h3>${toggle('act_proactive','启用主动联系',c.proactive_enabled)}<label class="sw">触发方式 <select id="act_mode"><option value="agent" ${c.proactive_mode==='agent'?'selected':''}>智能体自主判断（推荐）</option><option value="random" ${c.proactive_mode==='random'?'selected':''}>随机时间直接生成</option></select></label><label class="sw">允许联系时段 <input id="act_start" type="time" value="${esc(c.proactive_start)}"> 至 <input id="act_end" type="time" value="${esc(c.proactive_end)}"></label>${field('act_min','每天期望次数下限',c.daily_min,0,null)}${field('act_max','每天最多联系次数',c.daily_max,1,null)}${field('act_gap','至少间隔（分钟）',c.min_gap_minutes,30,720)}${field('act_idle','刚聊完多少分钟内不打扰',c.idle_minutes,5,240)}${toggle('act_noreply','上次主动消息后未收到主人新私信，则不追发',c.no_reply_pause)}<p class="muted">智能体结合当前会话判断是否适合联系，并建议30–180分钟后再考虑；每天最多${Math.max(8,Math.min(48,c.daily_max*2))}次模型判断。次数可自由填写非负整数（每日上限至少1），没有固定业务上限。期望次数是软目标，没有自然话题就不发。09:00–22:00若间隔120分钟，最多安排7次；要允许10次可把间隔改为60分钟。程序始终限制时段、每日上限、最小间隔和未回复不追发。</p><button class="btn primary" onclick="saveActivity()" ${activityBackendReady?'':'disabled'}>保存自主活动设置</button></section>
+ <section class="card" style="margin-top:12px"><h3>最近活动</h3><table><thead><tr><th>类型 / 时间</th><th>状态</th><th>结果</th></tr></thead><tbody>${jobs||'<tr><td colspan="3">尚无活动；保存并启用后在允许时段随机安排。</td></tr>'}</tbody></table><p class="muted">入队只表示已生成内容，平台接受与主人实际收到仍分别判断。发送记录见「任务」。</p></section>`;
+}
+async function saveActivity(){try{
+ const number=id=>Number(document.getElementById(id).value),on=id=>document.getElementById(id).checked;
+ const rows=document.getElementById('act_windows').value.trim().split(/\r?\n/).filter(Boolean).map(line=>{const m=line.match(/^\s*(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})\s*\|\s*(\d+)\s*\|\s*(\d+)\s*$/);if(!m)throw Error('时段格式应为 10:30-12:30 | 6 | 2');return m;});
+ const c={...activityConfig,browse_enabled:on('act_browse'),proactive_enabled:on('act_proactive'),proactive_mode:document.getElementById('act_mode').value,windows:rows.map(m=>[m[1],m[2]]),window_limits:rows.map(m=>Number(m[3])),window_wakes:rows.map(m=>Number(m[4])),max_per_wake:number('act_perwake'),daily_shares:number('act_shares'),proactive_start:document.getElementById('act_start').value,proactive_end:document.getElementById('act_end').value,daily_min:number('act_min'),daily_max:number('act_max'),min_gap_minutes:number('act_gap'),idle_minutes:number('act_idle'),no_reply_pause:on('act_noreply')};
+ await post('/api/activity',{config:c});settingsDirty=false;toast('已保存自主活动设置');load();
+}catch(e){toast('保存失败：'+e.message);}}
+renderNav();load();
+</script>
+</body>
+</html>

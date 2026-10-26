@@ -1,0 +1,40 @@
+name: Isolated Windows tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Core dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Prepare isolated paths (no credentials or login)
+        shell: pwsh
+        run: >-
+          python configure.py
+          --runtime-dir "$env:RUNNER_TEMP/feiyu"
+          --owner-uid 1234567890123456
+          --account-uid 2345678901234567
+          --owner-profile /user/CI_SYNTHETIC_NOT_A_REAL_OWNER
+          --codex-workspace "$env:GITHUB_WORKSPACE"
+      - name: Python and UI regressions
+        shell: pwsh
+        run: |
+          Set-Location "$env:RUNNER_TEMP/feiyu/installed/0.1.0"
+          python -m unittest discover -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test test_whale_bridge.mjs test_whale_standalone.mjs test_whale_pairing.mjs test_whale_upload.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test_console_ui.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test_whale_audio_ui.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test_whale_voice_order.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

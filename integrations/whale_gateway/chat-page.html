@@ -1,0 +1,1698 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f7fb">
+<title>鲸聊</title>
+<style>
+  :root {
+    --green: #3678df;
+    --green-dark: #2864c2;
+    --bubble-me: #dfeeff;
+    --bubble-other: #ffffff;
+    --bg: #f4f7fb;
+    --bar: #f7f7f7;
+    --ink: #191919;
+    --ink-2: #8a8a8a;
+    --line: rgba(0, 0, 0, 0.08);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── 顶部栏 ─────────────────────────────── */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    height: calc(48px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+    background: var(--bar);
+    border-bottom: 0.5px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .topbar .title {
+    font-size: 17px; font-weight: 600; color: var(--ink);
+    max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .topbar .scan {
+    position: absolute; right: 8px;
+    top: calc(env(safe-area-inset-top) + 4px);
+    width: 40px; height: 40px; border: none; background: transparent;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .topbar .scan svg { width: 22px; height: 22px; color: var(--ink); }
+  /* ── 消息区 ─────────────────────────────── */
+  .msgs {
+    position: fixed; top: calc(48px + env(safe-area-inset-top));
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    left: 0; right: 0; overflow-y: auto; padding: 12px 12px 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .row { display: flex; margin-bottom: 14px; align-items: flex-start; }
+  .row.me { flex-direction: row-reverse; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 6px; flex: none;
+    background: #d9d9d9 center/cover no-repeat;
+  }
+  .bubble {
+    position: relative; max-width: 72%;
+    margin: 0 10px;
+    padding: 9px 12px;
+    font-size: 15px; line-height: 1.45;
+    word-break: break-word; white-space: pre-wrap;
+    border-radius: 8px;
+  }
+  .row.other .bubble { background: var(--bubble-other); }
+  .row.me .bubble { background: var(--bubble-me); }
+  .row.other .bubble::before, .row.me .bubble::before {
+    content: ""; position: absolute; top: 14px; width: 10px; height: 10px;
+    transform: rotate(45deg); z-index: -1;
+  }
+  .row.other .bubble::before { left: -4px; background: var(--bubble-other); }
+  .row.me .bubble::before { right: -4px; background: var(--bubble-me); }
+  .status .bubble {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--ink-2); font-size: 14px; background: var(--bubble-other);
+  }
+
+  /* ── 语音条（微信样式）─────────────────── */
+  .vwrap { max-width: 72%; margin: 0 10px; display: flex; flex-direction: column; gap: 6px; }
+  .row.me .vwrap { align-items: flex-end; }
+  .vbubble {
+    position: relative; display: inline-flex; align-items: center; gap: 7px;
+    min-width: 74px; padding: 10px 13px; border-radius: 6px;
+    cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  .row.other .vbubble { background: var(--bubble-other); }
+  .row.me .vbubble { background: var(--bubble-me); }
+  .vbubble::after {
+    content: ""; position: absolute; top: 15px; width: 9px; height: 9px;
+    transform: rotate(45deg); z-index: -1;
+  }
+  .row.me .vbubble::after { right: -4px; background: var(--bubble-me); }
+  .row.other .vbubble::after { left: -4px; background: var(--bubble-other); }
+  .vbubble .vb-dur { font-size: 13px; color: #4a4a4a; font-variant-numeric: tabular-nums; }
+  .vbubble .vb-sound { width: 19px; height: 19px; color: #333; flex: none; }
+  .vbubble .vb-sound .arc { opacity: .35; }
+  .vbubble.playing .vb-sound .arc { animation: vbArc .9s infinite ease-in-out; opacity: 1; }
+  .vbubble.playing .vb-sound .arc2 { animation-delay: .18s; }
+  .vbubble.playing .vb-sound .arc3 { animation-delay: .36s; }
+  .vbubble.loading { opacity: .55; }
+  @keyframes vbArc { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+  .vstatus { font-size: 11px; color: #a0a0a0; }
+  .vstatus.err { color: #d0392b; }
+  .vtext {
+    font-size: 15px; line-height: 1.5; color: #191919; white-space: pre-wrap; word-break: break-word;
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 9px 12px;
+    max-width: 100%;
+  }
+  .vtext[hidden] { display: none; }
+
+  /* ── 语音条操作菜单 ─────────────────────── */
+  #voiceSheetMask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; z-index: 60;
+  }
+  #voiceSheetMask.show { display: block; }
+  #voiceSheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 61; background: #f7f7f7;
+    border-radius: 12px 12px 0 0; padding: 8px; display: none;
+  }
+  #voiceSheet.show { display: block; }
+  #voiceSheet button {
+    display: block; width: 100%; height: 50px; margin: 0 0 6px; border: 0; border-radius: 9px;
+    background: #fff; font-size: 16px; color: #191919;
+  }
+  #voiceSheet button.cancel { background: #ededed; margin-bottom: 0; }
+  #voiceSheet button.danger { color: #d0392b; }
+
+  /* ── 文字消息操作菜单（长按气泡：复制 / 多选） ─────── */
+  #textSheetMask {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; z-index: 60;
+  }
+  #textSheetMask.show { display: block; }
+  #textSheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 61; background: #f7f7f7;
+    border-radius: 12px 12px 0 0; padding: 8px; display: none;
+  }
+  #textSheet.show { display: block; }
+  #textSheet button {
+    display: block; width: 100%; height: 50px; margin: 0 0 6px; border: 0; border-radius: 9px;
+    background: #fff; font-size: 16px; color: #191919;
+  }
+  #textSheet button.cancel { background: #ededed; margin-bottom: 0; }
+  .dots { display: inline-flex; gap: 4px; align-items: center; }
+  .dots i {
+    width: 6px; height: 6px; border-radius: 50%; background: #b8b8b8;
+    animation: bounce 1.2s infinite;
+  }
+  .dots i:nth-child(2) { animation-delay: .2s; }
+  .dots i:nth-child(3) { animation-delay: .4s; }
+  @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-5px); opacity: 1; } }
+
+  .toast {
+    position: fixed; top: calc(56px + env(safe-area-inset-top)); left: 50%;
+    transform: translateX(-50%); z-index: 30;
+    background: rgba(0,0,0,.72); color: #fff; font-size: 13px;
+    padding: 7px 14px; border-radius: 6px; opacity: 0;
+    transition: opacity .25s; pointer-events: none; max-width: 80%;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ── 语音识别中提示 ─────────────────────── */
+  /* ── 录音浮层（微信样式）────────────────── */
+  .voice-hint {
+    position: fixed; inset: 0; z-index: 55;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .voice-hint.show { display: flex; background: rgba(0,0,0,.16); }
+  .voice-hint .vh-state {
+    margin-bottom: 16px; padding: 7px 18px; border-radius: 20px;
+    background: rgba(0,0,0,.72); color: #fff; font-size: 14px; line-height: 1.2;
+  }
+  .voice-hint .mic {
+    position: relative; width: 152px; height: 152px; border-radius: 20px;
+    background: rgba(0,0,0,.66);
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .voice-hint .mic svg { width: 44px; height: 44px; color: #fff; }
+  .voice-hint .waves {
+    position: absolute; bottom: 20px; left: 0; right: 0;
+    display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 20px;
+  }
+  .voice-hint .waves i {
+    width: 4px; height: 6px; border-radius: 2px; background: rgba(255,255,255,.9);
+    animation: vhwave .9s infinite ease-in-out;
+  }
+  .voice-hint .waves i:nth-child(2) { animation-delay: .1s; }
+  .voice-hint .waves i:nth-child(3) { animation-delay: .2s; }
+  .voice-hint .waves i:nth-child(4) { animation-delay: .3s; }
+  .voice-hint .waves i:nth-child(5) { animation-delay: .4s; }
+  .voice-hint .waves i:nth-child(6) { animation-delay: .5s; }
+  @keyframes vhwave { 0%,100% { height: 6px; } 50% { height: 18px; } }
+  .voice-hint .vh-tip {
+    margin-top: 20px; padding: 6px 15px; border-radius: 18px;
+    background: rgba(0,0,0,.66);
+    display: flex; align-items: center; gap: 5px;
+    font-size: 13px; color: #fff;
+  }
+  .voice-hint .vh-tip svg { width: 15px; height: 15px; color: #fff; }
+  /* 取消区：浮层变红并提示松手取消 */
+  .voice-hint.cancelling .mic { background: rgba(214,60,50,.94); }
+  .voice-hint.cancelling .vh-state { background: rgba(214,60,50,.94); }
+  .voice-hint.cancelling .vh-tip { background: rgba(214,60,50,.94); color: #fff; }
+  .voice-hint.cancelling .vh-tip svg { color: #fff; }
+  .voice-hint .text { display: none; }
+
+  /* ── 头像菜单（底部弹层） ───────────────── */
+  .avatar-mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 60; display: none; }
+  .avatar-mask.show { display: block; }
+  .avatar-menu { position: fixed; left: 0; right: 0; bottom: 0; background: #fff;
+    border-radius: 14px 14px 0 0; z-index: 61; display: none; padding: 8px 0; }
+  .avatar-menu.show { display: block; }
+  .avatar-menu .item { height: 52px; line-height: 52px; text-align: center; font-size: 16px;
+    color: #191919; cursor: pointer; }
+  .avatar-menu .item.cancel { border-top: 6px solid #f2f2f2; color: #8a8a8a; }
+  .avatar { cursor: pointer; }
+
+  /* ── 修改昵称弹层 ─────────────────────── */
+  .nick-mask { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 70; display: none; }
+  .nick-mask.show { display: block; }
+  .nick-dialog { position: fixed; left: 28px; right: 28px; top: 28%; background: #fff; border-radius: 12px;
+    z-index: 71; padding: 18px 16px; display: none; }
+  .nick-dialog.show { display: block; }
+  .nick-title { font-size: 16px; font-weight: 600; text-align: center; margin-bottom: 14px; }
+  .nick-dialog input { width: 100%; height: 42px; border: 1px solid #e5e5e5; border-radius: 8px;
+    font-size: 16px; padding: 0 12px; outline: none; box-sizing: border-box; }
+  .nick-btns { display: flex; gap: 10px; margin-top: 14px; }
+  .nick-btns button { flex: 1; height: 40px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+  .nick-btns .cancel { background: #f2f2f2; color: #191919; }
+  .nick-btns .ok { background: #07c160; color: #fff; }
+  .topbar .title { cursor: pointer; }
+
+  /* ── 多选删除 ───────────────────────────── */
+  .select-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 50; height: calc(48px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top); background: var(--bar); border-bottom: 0.5px solid var(--line);
+    display: none; align-items: center; padding-left: 12px; padding-right: 12px; gap: 16px; }
+  .select-bar.show { display: flex; }
+  .select-bar button { border: none; background: transparent; font-size: 15px; color: #191919; cursor: pointer; padding: 4px; }
+  .select-bar .danger { color: #d0392b; }
+  .select-bar .title { flex: 1; text-align: center; font-size: 15px; color: #191919; }
+  .check { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.5px solid #c0c0c0;
+    align-self: center; margin: 0 8px 0 0; display: flex; align-items: center; justify-content: center; }
+  .row.selected .check { background: #07c160; border-color: #07c160; }
+  .row.selected .check::after { content: ""; width: 10px; height: 5px; border-left: 2px solid #fff;
+    border-bottom: 2px solid #fff; transform: rotate(-45deg) translateY(-1px); }
+  .row.selected { background: rgba(7, 193, 96, 0.08); border-radius: 8px; }
+
+  /* ── 底部输入条 ─────────────────────────── */
+  .inputbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: var(--bar); border-top: 0.5px solid var(--line);
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    display: flex; align-items: flex-end; gap: 8px;
+  }
+  .inputbar .voice-btn {
+    width: 38px; height: 40px; flex: none; border: none; background: transparent;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+  }
+  .inputbar .voice-btn svg { width: 26px; height: 26px; color: #191919; }
+  .inputbar .voice-btn .icon-keyboard { display: none; }
+  .inputbar .voice-btn.voice-mode .icon-mic { display: none; }
+  .inputbar .voice-btn.voice-mode .icon-keyboard { display: block; }
+  .inputbar .field {
+    flex: 1; min-height: 40px; max-height: 120px; border: none; outline: none;
+    background: #f2f2f2; border-radius: 8px; font-size: 16px; line-height: 22px;
+    padding: 9px 12px; color: var(--ink); user-select: text; -webkit-user-select: text;
+    resize: none; overflow-y: auto; font-family: inherit;
+  }
+  .inputbar .send {
+    height: 40px; min-width: 68px; border: none; border-radius: 8px;
+    background: var(--green); color: #fff; font-size: 16px; font-weight: 500;
+    cursor: pointer; padding: 0 14px; flex: none;
+  }
+  .inputbar .send:disabled { background: #d0d0d0; }
+  /* 语音面板：点击唤起系统语音识别 */
+  .inputbar .holdtalk {
+    flex: 1; height: 40px; border: none; border-radius: 8px; background: #f2f2f2;
+    color: #191919; font-size: 16px; display: none; align-items: center; justify-content: center;
+    cursor: pointer; user-select: none; -webkit-user-select: none;
+  }
+  .inputbar .holdtalk.show { display: flex; }
+  .inputbar .holdtalk.recording { background: #dcdcdc; color: #555; }
+
+  /* ── 未配对引导页（默认可见，不依赖 JS，杜绝白屏） ── */
+  .guide { position: fixed; inset: 0; background: var(--bg); display: flex;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; z-index: 40; }
+  .guide.hidden { display: none; }
+  .guide .logo { width: 84px; height: 84px; border-radius: 20px; background: var(--green);
+    display: flex; align-items: center; justify-content: center; }
+  .guide .logo svg { width: 46px; height: 46px; color: #fff; }
+  .guide h1 { font-size: 19px; font-weight: 600; }
+  .guide p { font-size: 14px; color: var(--ink-2); text-align: center; line-height: 1.6; }
+  .guide .btn {
+    width: 220px; height: 46px; border: none; border-radius: 10px;
+    background: var(--green); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+  .guide .btn:active { background: var(--green-dark); }
+  .guide .divider { display: flex; align-items: center; gap: 10px; width: 260px; color: var(--ink-2); font-size: 12px; }
+  .guide .divider::before, .guide .divider::after { content: ""; flex: 1; height: 0.5px; background: var(--line); }
+  .guide .paste { display: flex; gap: 8px; width: 260px; }
+  .guide .paste input { flex: 1; height: 40px; border: none; outline: none; background: #fff;
+    border-radius: 8px; font-size: 14px; padding: 0 10px; color: var(--ink); user-select: text; -webkit-user-select: text; }
+  .guide .paste button { height: 40px; padding: 0 14px; border: none; border-radius: 8px;
+    background: var(--green); color: #fff; font-size: 14px; cursor: pointer; }
+  .guide .hint { font-size: 12px; color: #b0b0b0; }
+
+  .manager-overlay {position:fixed;inset:0;z-index:75;background:#11151c;display:flex;flex-direction:column;}
+  .manager-top {height:calc(54px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 12px 0;display:flex;align-items:center;justify-content:space-between;color:#d7e5fc;background:#1b2330;}
+  .manager-top button {height:42px;border:0;background:transparent;color:#a9c9ff;font-size:14px;}
+  #managerFrame {width:100%;flex:1;border:0;background:#11151c;}
+  /* Whale mobile UI v2 — quiet blue, shared touch targets and sheets. */
+  :root { --bar:rgba(255,255,255,.96); --ink:#243044; --ink-2:#7e8ba0; }
+  button { font-family:inherit; touch-action:manipulation; }
+  button:focus-visible,[role=button]:focus-visible { outline:3px solid #95baf4;outline-offset:3px; }
+  button:disabled { opacity:.48; }
+  [hidden] { display:none!important; }
+  .topbar { height:calc(60px + env(safe-area-inset-top));box-shadow:0 1px 12px #253d5910;border:0; }
+  .topbar .title { font-size:17px;max-width:calc(100% - 140px);letter-spacing:.3px; }
+  .topbar .scan,.topbar .manager-btn { position:absolute;top:calc(env(safe-area-inset-top) + 8px);width:44px;height:44px;border:0;border-radius:14px;background:transparent;color:#536783;display:flex;align-items:center;justify-content:center; }
+  .topbar .manager-btn { left:10px;background:#eef4ff;color:#376fc4; }
+  .topbar .manager-btn svg,.topbar .scan svg { width:23px;height:23px; }
+  .topbar .scan { right:10px; }
+  .msgs { top:calc(60px + env(safe-area-inset-top));padding:20px 14px 12px;scroll-behavior:auto; }
+  .row { margin-bottom:18px;gap:0; }
+  .avatar { width:36px;height:36px;border-radius:12px;box-shadow:0 1px 4px #20395a12; }
+  .bubble { max-width:calc(100% - 68px);margin:0 10px;padding:11px 14px;font-size:15.5px;line-height:1.65;border-radius:17px;box-shadow:0 2px 8px #1e365006;touch-action:pan-y pinch-zoom; }
+  .row.other .bubble { border-top-left-radius:5px; }
+  .row.me .bubble { border-top-right-radius:5px; }
+  .bubble::before,.vbubble::after { display:none; }
+  .bubble.media-bubble { padding:5px;overflow:hidden; }
+  .bubble.media-bubble img { display:block;border-radius:13px;max-width:100%;max-height:360px;cursor:zoom-in; }
+  .inputbar { background:var(--bar);gap:9px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -3px 16px #1e365005;border-color:#e6ecf3; }
+  .inputbar .field { border-radius:15px;background:#f0f4f9;min-height:44px;padding:11px 13px;font-size:16px; }
+  .inputbar .voice-btn,.inputbar .send { height:44px;border-radius:14px; }
+  .inputbar .voice-btn { width:38px; }
+  .inputbar .voice-btn svg { width:25px;height:25px;color:#526782; }
+  .inputbar .send { min-width:62px;font-size:14px; }
+  .inputbar .send:disabled { background:#dfe6ef;color:#8d9aab;opacity:1; }
+  .inputbar .holdtalk { height:44px;border-radius:15px;background:#eff4fa; }
+  .select-bar { height:calc(60px + env(safe-area-inset-top)); }
+  .vwrap { max-width:calc(100% - 68px);min-width:140px;gap:7px; }
+  .vbubble { border:0;border-radius:17px;min-height:48px;min-width:152px;padding:11px 15px;display:flex;gap:15px;color:#42658c;box-shadow:0 2px 8px #1e365008;touch-action:pan-y; }
+  .row.other .vbubble { border-top-left-radius:5px; }
+  .row.me .vbubble { border-top-right-radius:5px; }
+  .vb-dur { font-family:inherit!important;flex:1;text-align:left;font-size:14px!important; }
+  .vb-sound { color:#42658c!important; }
+  .vbubble.playing { background:#e5efff; }
+  .vbubble.playing .vb-dur { color:#2d6ac4; }
+  .vtext { border:0;background:#fff;border-radius:13px;font-size:14px;padding:12px;user-select:none;-webkit-user-select:none; }
+  .voice-caption { align-self:flex-start;padding:2px 3px;border:0;background:transparent;color:#6b82a1;font-size:12px; }
+  .vstatus { max-width:240px;line-height:1.4;color:#8795a9; }
+  #voiceSheet,#textSheet,.avatar-menu { left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));border-radius:23px;padding:12px;background:#f5f8fc;box-shadow:0 10px 50px #152a4d24;max-height:80dvh;overflow:auto; }
+  #voiceSheet button,#textSheet button,.avatar-menu .item { border:0;display:block;width:100%;min-height:48px;height:auto;line-height:1.4;padding:14px;border-radius:13px;margin:4px 0;background:#fff;font-size:15px;color:#304561; }
+  #voiceSheet button.cancel,#textSheet button.cancel,.avatar-menu .item.cancel { background:#e8edf5;border:0;margin-top:10px;color:#7b8ba1; }
+  .avatar-mask,#voiceSheetMask,#textSheetMask,.nick-mask { background:#14284755;backdrop-filter:blur(3px); }
+  .sheet-heading { font-size:14px;font-weight:600;text-align:center;padding:5px 0 10px;color:#526783; }
+  .avatar-preview { width:64px;height:64px;border-radius:21px;background:#e3ebf5 center/cover;margin:0 auto 12px; }
+  .sheet-note { color:#8591a3;font-size:12px;line-height:1.6;margin:9px 0; }
+  .nick-dialog { border-radius:22px;padding:22px;box-shadow:0 12px 60px #172a4426; }
+  .selection-dialog { position:fixed;z-index:71;left:12px;right:12px;top:15%;max-height:70dvh;padding:20px;background:white;border-radius:22px;overflow:auto; }
+  .selection-heading { display:flex;justify-content:space-between;align-items:center; }
+  .selection-heading button { border:0;background:#edf4ff;color:#3a70b7;padding:9px 14px;border-radius:10px; }
+  #selectionText { white-space:pre-wrap;line-height:1.85;user-select:text;-webkit-user-select:text;-webkit-touch-callout:default;padding:14px 0;font-size:16px; }
+  .image-viewer { position:fixed;inset:0;z-index:80;background:#101827f2;display:flex;align-items:center;justify-content:center; }
+  .image-viewer img { max-width:100%;max-height:90dvh;object-fit:contain;touch-action:pinch-zoom; }
+  #imageClose { position:absolute;right:16px;top:calc(16px + env(safe-area-inset-top));width:44px;height:44px;border:0;border-radius:50%;background:#ffffff22;color:white;font-size:29px; }
+  .latest-btn { position:fixed;z-index:12;bottom:calc(82px + env(safe-area-inset-bottom));right:16px;border:1px solid #e1e9f5;box-shadow:0 3px 15px #233c5f18;background:white;border-radius:20px;color:#496887;padding:9px 13px;font-size:12px; }
+  .toast { border-radius:20px;top:calc(70px + env(safe-area-inset-top)); }
+  @media(min-width:760px){.msgs{padding-left:max(24px,calc((100vw - 760px)/2));padding-right:max(24px,calc((100vw - 760px)/2));}.selection-dialog{max-width:620px;left:50%;right:auto;width:calc(100% - 24px);transform:translateX(-50%);}#voiceSheet,#textSheet,.avatar-menu{max-width:480px;left:50%;right:auto;width:calc(100% - 20px);transform:translateX(-50%);}}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important;}}
+
+  .attach-btn{flex:0 0 38px;width:38px;height:38px;border:1px solid #cdd4dd;border-radius:50%;background:transparent;color:#344054;font-size:27px;line-height:1}
+  .upload-overlay{position:fixed;inset:0;z-index:90;background:#10182777;display:flex;align-items:flex-end;justify-content:center}
+  .upload-sheet{width:100%;max-width:560px;background:#fff;border-radius:22px 22px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px #0002}
+  .upload-head,.upload-options,.upload-file{display:flex;align-items:center;gap:12px;justify-content:space-between}
+  .upload-head button,.upload-options button,.upload-file button{border:0;background:#eef2f7;border-radius:10px;padding:10px 14px;color:#344054}
+  .upload-options{justify-content:flex-start;margin:16px 0}.upload-help{color:#64748b;font-size:12px;line-height:1.6}
+  .upload-file{padding:12px 0;border-top:1px solid #edf0f4;font-size:14px}.upload-file span{overflow-wrap:anywhere;min-width:0;flex:1}
+  .upload-confirm{margin-top:14px;width:100%;border:0;border-radius:12px;padding:13px;background:#3978ef;color:white;font-size:16px}.upload-confirm:disabled{opacity:.5}
+  .file-name{font-size:15px;overflow-wrap:anywhere}.file-note{color:#64748b;font-size:12px;margin-top:5px}
+</style>
+</head>
+<body>
+
+  <header class="topbar" id="topbar" style="display:none">
+    <button class="scan" id="scanBtn" aria-label="扫码连接" title="扫码连接">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+        <rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM21 14v.01M17 21h.01M21 21h.01"/>
+      </svg>
+    </button>
+    <button class="manager-btn" id="assistantManagerBtn" aria-label="打开管理台" title="管理台"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
+    <span class="title" id="titleText" role="button" tabindex="0" aria-label="修改聊天名称">大肥鱼</span>
+  </header>
+
+  <header class="select-bar" id="selectBar">
+    <button id="selectCancelBtn">取消</button>
+    <span class="title" id="selectCount">已选 0 条</span>
+    <button id="selectAllBtn">全选</button>
+    <button class="danger" id="deleteBtn">隐藏</button>
+  </header>
+
+  <main class="msgs" id="msgs"></main>
+
+  <footer class="inputbar" id="inputbar" style="display:none">
+    <button class="voice-btn" id="voiceBtn" aria-label="语音输入" title="语音输入">
+      <svg class="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/>
+      </svg>
+      <svg class="icon-keyboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="6" width="20" height="12" rx="2"/>
+        <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/>
+      </svg>
+    </button>
+    <textarea class="field" id="input" rows="1" placeholder="输入消息…"></textarea>
+    <button class="holdtalk" id="holdTalk">按住 说话</button>
+    <button class="send" id="sendBtn" disabled>发送</button>
+    <button class="attach-btn" id="attachBtn" aria-label="上传图片或文件" title="上传图片或文件">＋</button>
+  </footer>
+
+  <button id="latestBtn" class="latest-btn" hidden>↓ 回到最新</button>
+  <div class="nick-mask" id="selectionMask"></div><section class="selection-dialog" id="selectionDialog" role="dialog" aria-modal="true" aria-label="选择消息文字" hidden>
+    <div class="selection-heading"><b>选择文字</b><button id="selectionClose">完成</button></div><p class="sheet-note">长按下面的文字，拖动系统选择柄，再复制需要的部分。</p><div id="selectionText" tabindex="0"></div>
+  </section>
+  <div class="image-viewer" id="imageViewer" role="dialog" aria-modal="true" aria-label="查看图片" hidden><button id="imageClose" aria-label="关闭图片">×</button><img id="imagePreview" alt="消息图片"></div>
+  <section id="managerOverlay" class="manager-overlay" hidden role="dialog" aria-modal="true" aria-label="管理台"><div class="manager-top"><button id="managerBack">‹ 返回聊天</button><span>管理台</span><button id="managerReload" aria-label="刷新管理台">↻</button></div><iframe id="managerFrame" title="手机管理台"></iframe></section>
+  <input id="appearanceFile" type="file" accept="image/*" hidden>
+  <section id="uploadOverlay" class="upload-overlay" role="dialog" aria-modal="true" aria-label="发送附件" hidden><div class="upload-sheet"><div class="upload-head"><b>发送附件</b><button id="uploadClose">关闭</button></div><div class="upload-options"><button id="pickImages">选择图片</button><button id="pickFiles">选择文件</button></div><div class="upload-help">每次最多6个文件。图片不超过10MiB，其他文件不超过32MiB。支持图片、视频、音频和PDF、DOCX、文本等资料；其他格式只保存，不执行。</div><div id="uploadList"></div><div id="uploadStatus" class="upload-help" role="status"></div><button id="uploadConfirm" class="upload-confirm" disabled>上传并发送</button></div></section>
+  <input id="messageImages" type="file" accept="image/*" multiple hidden>
+  <input id="messageFiles" type="file" multiple hidden>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="voice-hint" id="voiceHint">
+    <div class="vh-state" id="voiceHintLabel">松开 发送</div>
+    <div class="mic">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><path d="M12 18v4"/>
+      </svg>
+      <div class="waves"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="vh-tip" id="voiceCancelHint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>
+      </svg>
+      <span id="voiceCancelHintText">上滑取消</span>
+    </div>
+    <div class="text" id="voiceHintText"></div>
+  </div>
+
+  <div class="avatar-mask" id="avatarMask"></div>
+  <div class="avatar-menu" id="avatarMenu" role="dialog" aria-modal="true" aria-label="头像与聊天外观">
+    <div class="sheet-heading" id="avatarHeading">聊天外观</div><div class="avatar-preview" id="avatarPreview"></div>
+    <button class="item" id="avatarChangeItem">更换头像</button>
+    <button class="item" id="backgroundChangeItem">更换聊天背景</button>
+    <button class="item" id="backgroundDeleteItem">恢复默认背景</button>
+    <button class="item cancel" id="avatarCancelItem">取消</button>
+  </div>
+
+  <div id="voiceSheetMask"></div>
+  <div id="voiceSheet">
+    <button id="voiceTextBtn">转文字</button>
+    <button id="voiceDeleteBtn">多选消息</button>
+    <button id="voiceCancelBtn" class="cancel">取消</button>
+  </div>
+
+  <div id="textSheetMask"></div>
+  <div id="textSheet">
+    <button id="textCopyBtn">复制文字</button>
+    <button id="textRangeBtn">选择部分文字</button>
+    <button id="textSelectBtn">多选消息</button>
+    <button id="textSheetCancel" class="cancel">取消</button>
+  </div>
+
+  <div class="nick-mask" id="nickMask"></div>  <div class="nick-dialog" id="nickDialog">
+    <div class="nick-title">修改聊天对象名</div>
+    <input id="nickInput" type="text" maxlength="30" placeholder="请输入名称">
+    <div class="nick-btns">
+      <button class="cancel" id="nickCancelBtn">取消</button>
+      <button class="ok" id="nickOkBtn">确定</button>
+    </div>
+  </div>
+
+  <section class="guide" id="guide">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+      </svg>
+    </div>
+    <h1>连接电脑上的鲸聊</h1>
+    <p>先扫码配对电脑，配对后即可像微信一样<br>给电脑上的智能体发消息</p>
+    <button class="btn" id="guideScanBtn">扫一扫连接</button>
+    <div class="divider">或粘贴配对链接</div>
+    <div class="paste">
+      <input id="pasteInput" type="text" placeholder="http://…/wechat?pair=…">
+      <button id="pasteBtn">连接</button>
+    </div>
+    <p class="hint">电脑端：打开「鲸聊 · 配对」面板生成二维码</p>
+  </section>
+
+<script>
+window.__WECHAT_DEVICE__ = __WECHAT_DEVICE_VALUE__;
+window.__WECHAT_PAIR_ERR__ = __WECHAT_PAIR_ERR_VALUE__;
+window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
+(function () {
+  'use strict';
+
+  // 元素引用先声明：下面初始化逻辑会立即调用 showChat/showGuide，不能引用未赋值的变量
+  var cfg = { nickname: '大肥鱼', avatarOther: '', avatarMe: '' };
+  var msgs = document.getElementById('msgs');
+  var input = document.getElementById('input');
+  var sendBtn = document.getElementById('sendBtn');
+  var voiceBtn = document.getElementById('voiceBtn');
+  var holdTalk = document.getElementById('holdTalk');
+  var toast = document.getElementById('toast');
+  var guide = document.getElementById('guide');
+  var avatarMask = document.getElementById('avatarMask');
+  var avatarMenu = document.getElementById('avatarMenu');
+  var avatarMenuSide = 'other';
+  var titleText = document.getElementById('titleText');
+  var nickMask = document.getElementById('nickMask');
+  var nickDialog = document.getElementById('nickDialog');
+  var nickInput = document.getElementById('nickInput');
+  var statusRow = null;
+  var busy = false;
+  var knownIds = {};
+  var lastSeq = 0;
+  var pollTimer = null;
+  var seenMsgIds = {};
+  var hiddenSet = {};
+  var selectMode = false;
+  var selectedIds = {};
+  var chatShown = false;
+  var selectBar = document.getElementById('selectBar');
+  var selectCount = document.getElementById('selectCount');
+  var deleteBtn = document.getElementById('deleteBtn');
+
+  var qs = new URLSearchParams(location.search);
+  var deviceId = (window.__WECHAT_DEVICE__) || qs.get('device') || (function () {
+    try { return sessionStorage.getItem('dsh-remote-device') || localStorage.getItem('dsh-remote-device'); } catch (e) { return null; }
+  })();
+  // 稳定客户端标识：App 注入优先，其次本地持久化；用于跨扫码/换公网地址保留同一会话
+  var clientId = (window.__WECHAT_CLIENT__) || qs.get('client') || (function () {
+    try { return localStorage.getItem('dsh-wechat-client'); } catch (e) { return null; }
+  })() || (function () {
+    var id = (Math.random() + 1).toString(36).slice(2) + Date.now().toString(36);
+    try { localStorage.setItem('dsh-wechat-client', id); } catch (e) {}
+    return id;
+  })();
+  try { localStorage.setItem('dsh-wechat-client', clientId); } catch (e) {}
+  // 落库 deviceId，并清掉地址栏里的配对参数
+  if (deviceId) {
+    try {
+      sessionStorage.setItem('dsh-remote-device', deviceId);
+      localStorage.setItem('dsh-remote-device', deviceId);
+    } catch (e) {}
+  }
+  if (qs.get('pair') || qs.get('device') || qs.get('client')) {
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  }
+  // 配对失败提示（服务器直接下发到页面）
+  if (window.__WECHAT_PAIR_ERR__) {
+    setTimeout(function () { toastText('配对失败：请刷新电脑上的二维码后重扫'); }, 250);
+  }
+  // 有设备凭据就先显示聊天骨架，不依赖网络请求才渲染
+  if (deviceId) showChat();
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function toastText(t) {
+    toast.textContent = t; toast.classList.add('show');
+    clearTimeout(toastText._t);
+    toastText._t = setTimeout(function () { toast.classList.remove('show'); }, 2600);
+  }
+  var followLatest=true;
+  function scrollBottom(force) { if(force===true||followLatest){msgs.scrollTop=msgs.scrollHeight;document.getElementById('latestBtn').hidden=true;}else document.getElementById('latestBtn').hidden=false; }
+  msgs.addEventListener('scroll',function(){followLatest=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<100;document.getElementById('latestBtn').hidden=followLatest;},{passive:true});
+  document.getElementById('latestBtn').addEventListener('click',function(){followLatest=true;scrollBottom(true);});
+
+  function addRow(kind, text, avatarSrc, id) {
+    var row = document.createElement('div');
+    row.className = 'row ' + (kind === 'me' ? 'me' : 'other');
+    if (id) row.dataset.id = id;
+    var av = document.createElement('div');
+    av.className = 'avatar';
+    if (avatarSrc) av.style.backgroundImage = 'url("' + avatarSrc + '")';
+    wireAvatar(av,kind==='me'?'me':'other',row);
+    var bub = document.createElement('div');
+    bub.className = 'bubble';
+    bub.textContent = text;row._messageText=text;
+    row.appendChild(av); row.appendChild(bub);
+    row.addEventListener('click', function () { if (selectMode) toggleSelect(row); });
+    attachLongPress(row);
+    msgs.appendChild(row);
+    scrollBottom();
+    return row;
+  }
+
+  function addAssistantImage(message) {
+    var row=addRow('other','',cfg.avatarOther,message.id),bubble=row.querySelector('.bubble');
+    var img=document.createElement('img');
+    img.src=message.image+'&device='+encodeURIComponent(deviceId);
+    img.alt='助手发来的图片';img.style.cssText='display:block;max-width:100%;max-height:420px;border-radius:10px';
+    row._messageText='';bubble.classList.add('media-bubble');
+    img.addEventListener('click',function(e){e.stopPropagation();if(selectMode){toggleSelect(row);return;}document.getElementById('imagePreview').src=img.src;document.getElementById('imageViewer').hidden=false;});
+    img.onload=scrollBottom;bubble.appendChild(img);
+  }
+  function addAssistantAudio(message) {
+    var key='assistant:'+message.id;
+    var rec={id:key,transcript:message.text||'',durationMs:message.duration_ms||0,status:'sent',audioUrl:message.audio+'&device='+encodeURIComponent(deviceId),assistant:true};
+    voiceRecords[key]=rec;
+    return addVoiceRow(rec,{id:message.id,side:'other'});
+  }
+
+  function addIncomingFile(message){
+    var row=addRow('me','',cfg.avatarMe,message.id),bubble=row.querySelector('.bubble');
+    row._messageText=message.text||'附件';
+    if(message.kind==='image'&&message.image){
+      var image=document.createElement('img');image.src=message.image+'&device='+encodeURIComponent(deviceId);image.alt=message.text||'我发送的图片';
+      image.style.cssText='display:block;max-width:100%;max-height:320px;border-radius:10px';bubble.classList.add('media-bubble');bubble.appendChild(image);
+      image.addEventListener('click',function(e){e.stopPropagation();if(selectMode){toggleSelect(row);return;}document.getElementById('imagePreview').src=image.src;document.getElementById('imageViewer').hidden=false;});image.onload=scrollBottom;
+    }else{
+      var name=document.createElement('div');name.className='file-name';name.textContent='📎 '+(message.text||'文件');bubble.appendChild(name);
+      var note=document.createElement('div');note.className='file-note';note.textContent='已上传到电脑';bubble.appendChild(note);
+    }
+    return row;
+  }
+
+  var uploadItems=[],uploadingFiles=false;
+  function nextUploadId(){return window.crypto&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16);});}
+  function renderUploads(){
+    var list=document.getElementById('uploadList');list.replaceChildren();
+    uploadItems.forEach(function(item){var row=document.createElement('div');row.className='upload-file';var label=document.createElement('span');label.textContent=item.file.name+' · '+(item.file.size/1048576).toFixed(2)+' MiB';var remove=document.createElement('button');remove.textContent='移除';remove.disabled=uploadingFiles;remove.onclick=function(){uploadItems=uploadItems.filter(function(x){return x!==item;});renderUploads();};row.appendChild(label);row.appendChild(remove);list.appendChild(row);});
+    document.getElementById('uploadConfirm').disabled=uploadingFiles||!uploadItems.length;document.getElementById('uploadClose').disabled=uploadingFiles;
+    document.getElementById('pickImages').disabled=uploadingFiles;document.getElementById('pickFiles').disabled=uploadingFiles;
+  }
+  function chooseFiles(event){
+    Array.from(event.target.files||[]).forEach(function(file){
+      var image=/\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(file.name),limit=(image?10:32)*1048576;
+      if(!file.size||file.size>limit){toastText(file.name+'：文件为空或超过'+(image?10:32)+'MiB');return;}
+      if(uploadItems.length>=6){toastText('每次最多选择6个文件');return;}
+      uploadItems.push({id:nextUploadId(),file:file});
+    });event.target.value='';renderUploads();
+  }
+  function uploadOne(item){return new Promise(function(resolve,reject){
+    var request=new XMLHttpRequest(),url='/api/wechat/assistant/upload?id='+encodeURIComponent(item.id)+'&name='+encodeURIComponent(item.file.name)+'&device='+encodeURIComponent(deviceId);
+    if(clientId)url+='&client='+encodeURIComponent(clientId);
+    request.open('POST',url);request.timeout=120000;request.setRequestHeader('Content-Type','application/octet-stream');request.setRequestHeader('x-whale-device',deviceId);
+    request.upload.onprogress=function(e){document.getElementById('uploadStatus').textContent=item.file.name+' · '+(e.lengthComputable?Math.round(e.loaded/e.total*100)+'%':'上传中');};
+    request.onload=function(){var result;try{result=JSON.parse(request.responseText);}catch(e){}if(request.status===200&&result&&result.ok)resolve(result);else reject(new Error(result&&result.error||'上传失败，原文件保留，可手动重试'));};
+    request.onerror=request.ontimeout=function(){reject(new Error('上传结果未确认，可用同一编号手动重试，不会重复创建任务'));};request.send(item.file);
+  });}
+  document.getElementById('attachBtn').onclick=function(){document.getElementById('uploadOverlay').hidden=false;renderUploads();};
+  document.getElementById('uploadClose').onclick=function(){if(!uploadingFiles)document.getElementById('uploadOverlay').hidden=true;};
+  document.getElementById('pickImages').onclick=function(){document.getElementById('messageImages').click();};
+  document.getElementById('pickFiles').onclick=function(){document.getElementById('messageFiles').click();};
+  document.getElementById('messageImages').onchange=chooseFiles;document.getElementById('messageFiles').onchange=chooseFiles;
+  document.getElementById('uploadConfirm').onclick=async function(){
+    if(uploadingFiles||!uploadItems.length)return;uploadingFiles=true;renderUploads();
+    try{for(var item of uploadItems.slice()){await uploadOne(item);uploadItems=uploadItems.filter(function(x){return x!==item;});}
+      document.getElementById('uploadOverlay').hidden=true;toastText('附件已上传，可继续发文字说明；资料处理完成后交给智能体');
+    }catch(error){document.getElementById('uploadStatus').textContent=error.message;toastText(error.message);}
+    finally{uploadingFiles=false;renderUploads();}
+  };
+
+  document.getElementById('assistantManagerBtn').addEventListener('click',function(){
+    openManager();
+  });
+  function addAssistant(text,id){addRow('other',text,cfg.avatarOther,id);}
+
+  function setStatus(text) {
+    removeStatus();
+    if (text === null || text === undefined || text === '') return;
+    statusRow = document.createElement('div');
+    statusRow.className = 'row other status';
+    var av = document.createElement('div');
+    av.className = 'avatar';
+    if (cfg.avatarOther) av.style.backgroundImage = 'url("' + cfg.avatarOther + '")';
+    av.addEventListener('click', function () { showAvatarMenu('other'); });
+    var bub = document.createElement('div');
+    bub.className = 'bubble';
+    bub.appendChild(document.createTextNode(text + ' '));
+    var dots = document.createElement('span');
+    dots.className = 'dots';
+    dots.innerHTML = '<i></i><i></i><i></i>';
+    bub.appendChild(dots);
+    statusRow.appendChild(av); statusRow.appendChild(bub);
+    msgs.appendChild(statusRow);
+    scrollBottom();
+  }
+  function removeStatus() {
+    if (statusRow) { statusRow.remove(); statusRow = null; }
+  }
+
+  /* ── 长按气泡：文字消息给「复制 / 多选」，语音条另有自己的菜单 ── */
+  function attachLongPress(row,target,openMenu) {
+    target=target||row.querySelector('.bubble');if(!target)return;
+    row._lpAt=0;var timer=null,sx=0,sy=0;
+    function cancel(){clearTimeout(timer);timer=null;}
+    target.addEventListener('pointerdown',function(e){
+      cancel();if(selectMode||e.isPrimary===false||(e.pointerType==='mouse'&&e.button!==0))return;
+      sx=e.clientX;sy=e.clientY;
+      timer=setTimeout(function(){row._lpAt=Date.now();(openMenu||openTextSheet)(row);},480);
+    });
+    target.addEventListener('pointermove',function(e){if(Math.abs(e.clientX-sx)>10||Math.abs(e.clientY-sy)>10)cancel();});
+    ['pointerup','pointercancel','lostpointercapture'].forEach(function(name){target.addEventListener(name,cancel);});
+    target.addEventListener('click',function(e){if(Date.now()-row._lpAt<650){e.preventDefault();e.stopImmediatePropagation();}},true);
+    target.addEventListener('contextmenu',function(e){e.preventDefault();cancel();if(!selectMode)(openMenu||openTextSheet)(row);});
+  }
+  function wireAvatar(avatar,side,row){
+    avatar.setAttribute('role','button');avatar.tabIndex=0;avatar.setAttribute('aria-label',side==='me'?'我的头像与聊天外观':'对方头像与聊天外观');
+    function open(e){e.stopPropagation();if(selectMode){toggleSelect(row);return;}showAvatarMenu(side);}
+    avatar.addEventListener('click',open);
+    avatar.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();open(e);}});
+  }
+
+  function enterSelectMode() {
+    if (selectMode) return;
+    selectMode = true;
+    selectedIds = {};
+    document.getElementById('topbar').style.display = 'none';
+    document.getElementById('inputbar').style.display = 'none';
+    selectBar.classList.add('show');
+    updateRowChecks();
+  }
+
+  function exitSelectMode() {
+    selectMode = false;
+    selectedIds = {};
+    selectBar.classList.remove('show');
+    if (chatShown) {
+      document.getElementById('topbar').style.display = 'flex';
+      document.getElementById('inputbar').style.display = 'flex';
+    }
+    updateRowChecks();
+  }
+
+  function toggleSelect(row) {
+    if (!selectMode) return;
+    if (Date.now() - (row._lpAt || 0) < 600) return; // 长按后的合成 click，忽略
+    var id = row.dataset.id;
+    if (!id) return;
+    if (selectedIds[id]) delete selectedIds[id]; else selectedIds[id] = true;
+    updateRowChecks();
+  }
+
+  function updateRowChecks() {
+    var rows = msgs.querySelectorAll('.row');
+    var count = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var check = row.querySelector('.check');
+      var sel = selectMode && row.dataset.id && selectedIds[row.dataset.id];
+      if (selectMode&&row.dataset.id) {
+        if (!check) {
+          check = document.createElement('div');
+          check.className = 'check';
+          row.insertBefore(check, row.firstChild);
+        }
+        row.classList.toggle('selected', !!sel);
+        if (sel) count++;
+      } else {
+        if (check) check.remove();
+        row.classList.remove('selected');
+      }
+    }
+    count=Object.keys(selectedIds).length;
+    selectCount.textContent = '已选 ' + count + ' 条';
+    deleteBtn.style.opacity = count > 0 ? '1' : '.4';
+  }
+
+  function selectAll() {
+    if (!selectMode) return;
+    var rows = msgs.querySelectorAll('.row');
+    var allSelected = true;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].dataset.id && !selectedIds[rows[i].dataset.id]) { allSelected = false; break; }
+    }
+    if (allSelected) {
+      selectedIds = {};
+    } else {
+      for (var j = 0; j < rows.length; j++) {
+        if (rows[j].dataset.id) selectedIds[rows[j].dataset.id] = true;
+      }
+    }
+    updateRowChecks();
+  }
+
+  function deleteSelected() {
+    var ids = [];
+    for (var id in selectedIds) ids.push(id);
+    if (ids.length === 0) return;
+    api('/api/wechat/hide', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ids: ids })
+    }).then(function (r) {
+      if (r && r.ok === true) {
+        if(voicePlayingId&&voiceRows[voicePlayingId]&&ids.indexOf(voiceRows[voicePlayingId].dataset.id)!==-1)stopVoicePlayback();
+        for (var k = 0; k < ids.length; k++) hiddenSet[ids[k]] = true;
+        var rows = msgs.querySelectorAll('.row');
+        for (var m = 0; m < rows.length; m++) {
+          if (rows[m].dataset.id && selectedIds[rows[m].dataset.id]) rows[m].remove();
+        }
+        toastText('已在本设备隐藏 ' + ids.length + ' 条，电脑记录保留');
+        exitSelectMode();
+      } else {
+        toastText((r && r.error) || '删除失败');
+      }
+    }).catch(function () { toastText('删除失败，请检查网络'); });
+  }
+
+  document.getElementById('selectCancelBtn').addEventListener('click', exitSelectMode);
+  document.getElementById('selectAllBtn').addEventListener('click', selectAll);
+  deleteBtn.addEventListener('click', deleteSelected);
+
+  /* ── 头像菜单 ──────────────────────────── */
+  function showAvatarMenu(side) {
+    closePopovers();avatarMenuSide = side === 'me' ? 'me' : 'other';
+    document.getElementById('avatarHeading').textContent=avatarMenuSide==='me'?'我的头像与聊天外观':cfg.nickname+'的头像';
+    document.getElementById('avatarPreview').style.backgroundImage='url("'+(avatarMenuSide==='me'?cfg.avatarMe:cfg.avatarOther)+'")';
+    document.getElementById('backgroundDeleteItem').disabled=!msgs.style.backgroundImage||msgs.style.backgroundImage==='none';
+    avatarMask.classList.add('show');
+    avatarMenu.classList.add('show');
+  }
+  function hideAvatarMenu() {
+    avatarMask.classList.remove('show');
+    avatarMenu.classList.remove('show');
+  }
+  avatarMask.addEventListener('click', hideAvatarMenu);
+  document.getElementById('avatarCancelItem').addEventListener('click', hideAvatarMenu);
+  document.getElementById('avatarChangeItem').addEventListener('click', function () {
+    hideAvatarMenu();
+    try {
+      if (window.WechatBridge && typeof window.WechatBridge.pickAvatar === 'function') {
+        window.WechatBridge.pickAvatar(avatarMenuSide);
+        return;
+      }
+    } catch (e) {}
+    pickAppearance('avatar',avatarMenuSide);
+  });
+  document.getElementById('backgroundChangeItem').addEventListener('click', function () {
+    hideAvatarMenu();
+    try {
+      if (window.WechatBridge && typeof window.WechatBridge.pickBackground === 'function') {
+        window.WechatBridge.pickBackground();
+        return;
+      }
+    } catch (e) {}
+    pickAppearance('background');
+  });
+  document.getElementById('backgroundDeleteItem').addEventListener('click', function () {
+    hideAvatarMenu();
+    api('/api/wechat/background/delete', { method: 'POST' }).then(function (r) {
+      if (r && r.ok === true) {
+        applyBackground('');
+        toastText('背景已删除');
+      } else {
+        toastText((r && r.error) || '删除失败');
+      }
+    }).catch(function () { toastText('删除失败，请检查网络'); });
+  });
+
+  /* ── 修改聊天对象名 ─────────────────────── */
+  function showNickDialog() {
+    nickInput.value = cfg.nickname || '';
+    nickMask.classList.add('show');
+    nickDialog.classList.add('show');
+    setTimeout(function () { try { nickInput.focus(); } catch (e) {} }, 100);
+  }
+  function hideNickDialog() {
+    nickMask.classList.remove('show');
+    nickDialog.classList.remove('show');
+  }
+  titleText.addEventListener('click', showNickDialog);
+  nickMask.addEventListener('click', hideNickDialog);
+  document.getElementById('nickCancelBtn').addEventListener('click', hideNickDialog);
+  document.getElementById('nickOkBtn').addEventListener('click', function () {
+    var name = nickInput.value.trim();
+    if (name === '') { toastText('名称不能为空'); return; }
+    api('/api/wechat/nickname', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nickname: name })
+    }).then(function (r) {
+      if (r && r.ok === true) {
+        cfg.nickname = name;
+        titleText.textContent = name;
+        hideNickDialog();
+        toastText('已更新');
+      } else {
+        toastText((r && r.error) || '更新失败');
+      }
+    }).catch(function () { toastText('更新失败，请检查网络'); });
+  });
+
+  /* Android 选择图片后回传 dataUrl，上传到服务器并刷新头像 */
+  window.wechatAvatarPicked = function (side, dataUrl) {
+    if (side !== 'me' && side !== 'other') return;
+    if (typeof dataUrl !== 'string' || dataUrl === '') { toastText('读取图片失败'); return; }
+    toastText('正在更新图片…');
+    api('/api/wechat/avatar/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ side: side, data: dataUrl })
+    }).then(function (r) {
+      if (r && r.ok === true) {
+        toastText('头像已更新');
+        var v = Date.now();
+        if (side === 'other') cfg.avatarOther = '/api/wechat/avatar/other?v=' + v;
+        else cfg.avatarMe = '/api/wechat/avatar/me?v=' + v;
+        refreshAvatars();
+      } else {
+        toastText((r && r.error) || '头像更新失败');
+      }
+    }).catch(function () { toastText('上传失败，请检查网络'); });
+  };
+
+  function refreshAvatars() {
+    var rows = msgs.querySelectorAll('.row');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var av = row.querySelector('.avatar');
+      if (!av) continue;
+      var url = row.classList.contains('me') ? cfg.avatarMe : cfg.avatarOther;
+      av.style.backgroundImage = url ? 'url("' + url + '")' : '';
+    }
+  }
+
+  /* Android 选择背景图片后回传 dataUrl，上传到服务器并应用 */
+  window.wechatBackgroundPicked = function (dataUrl) {
+    if (typeof dataUrl !== 'string' || dataUrl === '') { toastText('读取图片失败'); return; }
+    toastText('正在更新图片…');
+    api('/api/wechat/background/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ data: dataUrl })
+    }).then(function (r) {
+      if (r && r.ok === true) {
+        toastText('背景已更新');
+        applyBackground('/api/wechat/background?v=' + Date.now());
+      } else {
+        toastText((r && r.error) || '背景更新失败');
+      }
+    }).catch(function () { toastText('上传失败，请检查网络'); });
+  };
+
+  function applyBackground(url) {
+    msgs.style.backgroundImage = url ? 'url("' + url + '")' : '';
+    msgs.style.backgroundSize = 'cover';
+    msgs.style.backgroundPosition = 'center';
+    msgs.style.backgroundRepeat = 'no-repeat';
+  }
+
+  function showGuide() {
+    chatShown = false;
+    guide.classList.remove('hidden');
+    document.getElementById('topbar').style.display = 'none';
+    document.getElementById('inputbar').style.display = 'none';
+  }
+  function showChat() {
+    chatShown = true;
+    guide.classList.add('hidden');
+    document.getElementById('topbar').style.display = 'flex';
+    document.getElementById('inputbar').style.display = 'flex';
+    syncLayout();
+  }
+
+  /* ── 服务端通信 ────────────────────────── */
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = opts.headers || {};
+    if (deviceId) opts.headers['x-whale-device'] = deviceId;
+    var sep = path.indexOf('?') >= 0 ? '&' : '?';
+    if (deviceId) { path = path + sep + 'device=' + encodeURIComponent(deviceId); sep = '&'; }
+    if (clientId) path = path + sep + 'client=' + encodeURIComponent(clientId);
+    return fetch(path, opts).then(function (r) { return r.json(); });
+  }
+
+  var assistantWorkflow=false;
+  function loadState() {
+    api('/api/wechat/state').then(function (s) {
+      if (!s || s.paired !== true) { showGuide(); return; }
+      assistantWorkflow=!!s.workflow;
+      cfg = {
+        nickname: s.nickname || cfg.nickname,
+        avatarOther: s.avatarOther || '',
+        avatarMe: s.avatarMe || ''
+      };
+      titleText.textContent = cfg.nickname;
+      showChat();
+      if (s.background) applyBackground(s.background);
+      (s.hiddenIds || []).forEach(function (id) { hiddenSet[id] = true; });
+      bindVoiceHistory(s.history || []).then(function (voiceByMsg) {
+        (s.history || []).forEach(function (m) {
+          if (m.id && hiddenSet[m.id]) return;
+          if (m.id && seenMsgIds[m.id]) return;
+          if (m.id) seenMsgIds[m.id] = true;
+          // 语音产生的消息就地渲染成语音条，不再重复显示【语音】文本气泡；
+          // 必须在这里按历史顺序插入，否则所有语音条都会跑到列表末尾。
+          if (m.role === 'user' && typeof m.text === 'string' && m.text.indexOf('【语音】') === 0) {
+            var rec = voiceByMsg[m.id];
+            if (rec) {
+              voiceRecords[rec.id] = rec;
+              upsertVoice(rec, { id: m.id });
+            } else addRow('me',m.text,cfg.avatarMe,m.id);
+            return;
+          }
+          if (m.role === 'user' && (m.kind==='image'||m.kind==='file')) addIncomingFile(m);
+          else if (m.role === 'user') addRow('me', m.text, cfg.avatarMe, m.id);
+          else if(m.kind==='image'&&m.image)addAssistantImage(m);else if(m.kind==='audio'&&m.audio)addAssistantAudio(m);else addAssistant(m.text, m.id);
+        });
+        lastSeq=Math.max(lastSeq,Number(s.seq)||0);
+        startPolling();
+      });
+      sttReady = !!(s.stt && s.stt.ready);
+      busy=!!s.busy;
+      if (s.busy) setStatus('正在思考');
+      else removeStatus();
+      showDispatchAttention(s.dispatch_attention);
+
+
+    }).catch(function () { showGuide(); });
+  }
+
+  var lastDispatchNotice='';
+  function showDispatchAttention(value){
+    if(!value||!value.task_id||lastDispatchNotice===value.task_id+':'+value.state)return;
+    lastDispatchNotice=value.task_id+':'+value.state;
+    toastText(value.message||'上一条会话投递异常，可以继续发送新消息。');
+  }
+  function handleEvent(m) {
+    if (!m || !m.type) return;
+    if (m.type === 'user') {
+      if (m.id && hiddenSet[m.id]) return;
+      if(m.kind==='image'||m.kind==='file'){if(m.id&&seenMsgIds[m.id])return;if(m.id)seenMsgIds[m.id]=true;addIncomingFile(m);return;}
+      // 语音产生的文本由语音条表示：只回填语音条的 message id，不再插入文本气泡
+      if (typeof m.text === 'string' && m.text.indexOf('【语音】') === 0) {
+        if (!m.id || seenMsgIds[m.id]) return;
+        seenMsgIds[m.id] = true;
+        var vrow = pendingVoiceRow();
+        if (vrow) vrow.dataset.id = m.id;
+        else {
+          // Keep the chronological slot while fetching this message's audio.
+          var anchor=addRow('me',m.text,cfg.avatarMe,m.id);
+          bindVoiceHistory([m]).then(function(byMsg){
+            var rec=byMsg[m.id];
+            if(!rec||!anchor.parentNode||hiddenSet[m.id])return;
+            voiceRecords[rec.id]=rec;
+            addVoiceRow(rec,{id:m.id,before:anchor});anchor.remove();
+          });
+        }
+        return;
+      }
+      if (m.id) {
+        if (seenMsgIds[m.id]) return;
+        seenMsgIds[m.id] = true;
+        // 用服务器下发的稳定 id 回填乐观渲染的那条待定气泡
+        var pending = msgs.querySelector('.row.me[data-pending="1"]');
+        if (pending) {
+          pending.dataset.id = m.id;
+          pending.removeAttribute('data-pending');
+        } else {
+          addRow('me', m.text, cfg.avatarMe, m.id);
+        }
+      } else {
+        addRow('me', m.text, cfg.avatarMe);
+      }
+    } else if (m.type === 'status') {
+      setStatus(m.text || '正在思考');
+    } else if (m.type === 'busy') {
+      if (m.value) { busy = true; if (!statusRow) setStatus('正在思考'); }
+      else { busy = false; removeStatus(); }
+    } else if (m.type === 'dispatch_attention') {
+      showDispatchAttention(m);
+    } else if (m.type === 'assistant') {
+      if (m.id && hiddenSet[m.id]) return;
+      if (m.id) {
+        if (seenMsgIds[m.id]) return;
+        seenMsgIds[m.id] = true;
+      }
+      removeStatus();
+      if(m.kind==='image'&&m.image)addAssistantImage(m);else if(m.kind==='audio'&&m.audio)addAssistantAudio(m);else addAssistant(m.text, m.id);
+
+    } else if (m.type === 'error') {
+      removeStatus();
+      toastText(m.message || '出错了');
+    }
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    var tick = function () {
+      // 串行化：上一个请求完成后再调度下一个，避免网络差时重叠导致重复渲染
+      api('/api/wechat/poll?since=' + lastSeq).then(function (r) {
+        if (r && r.ok === true) {
+          if (r.busy && !statusRow) setStatus('正在思考');
+          (r.events || []).forEach(handleEvent);
+          lastSeq = r.seq || lastSeq;
+        }
+      }).catch(function () {}).then(function () {
+        pollTimer = setTimeout(tick, 1500);
+      });
+    };
+    tick();
+  }
+
+  /* ── 发送 ──────────────────────────────── */
+  function send() {
+    var text = input.value.trim();
+    if (text === '' || busy) return;
+    input.value = '';
+    input.style.height = '';
+    sendBtn.disabled = true;
+    var row = addRow('me', text, cfg.avatarMe);
+    row.setAttribute('data-pending', '1');
+    busy = true;
+    setStatus('正在思考');
+    syncLayout();
+    api('/api/wechat/send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: text, id: (window.crypto&&crypto.randomUUID)?crypto.randomUUID():('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16);} )) })
+    }).then(function (r) {
+      if (!r || r.ok !== true) {
+        busy = false; removeStatus();
+        toastText((r && r.error) || '发送失败，请检查电脑端');
+      }
+    }).catch(function () {
+      busy = false; removeStatus();
+      toastText('网络错误：无法连接电脑');
+    });
+  }
+  sendBtn.addEventListener('click', send);
+
+  /* 输入框随内容自动增高 */
+  function autoGrow() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    sendBtn.disabled = input.value.trim() === '';
+    syncLayout();
+  }
+  input.addEventListener('input', autoGrow);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+  });
+
+  /* ── 语音输入 ──────────────────────────── */
+  var voiceMode = false;
+  var voiceActive = false;
+  var sttReady = false;
+  var useNativeVoice = !!(window.WechatBridge && window.WechatBridge.setNativeVoiceVisible);
+  function setVoiceMode(on) {
+    voiceMode = on;
+    if (on) {
+      voiceBtn.classList.add('voice-mode');
+      input.style.display = 'none';
+      sendBtn.style.display = 'none';
+      if (useNativeVoice) {
+        // 新 APK：显示原生按钮，原生处理触控录音
+        try { window.WechatBridge.setNativeVoiceVisible(true); } catch (err) {}
+      } else {
+        // 旧 APK：显示 JS holdTalk
+        holdTalk.classList.add('show');
+      }
+    } else {
+      voiceBtn.classList.remove('voice-mode');
+      input.style.display = '';
+      sendBtn.style.display = '';
+      if (useNativeVoice) {
+        try { window.WechatBridge.setNativeVoiceVisible(false); } catch (err) {}
+      } else {
+        holdTalk.classList.remove('show');
+      }
+    }
+  }
+  voiceBtn.addEventListener('click', function () { setVoiceMode(!voiceMode); });
+
+  var voiceHint = document.getElementById('voiceHint');
+  var voiceHintLabel = document.getElementById('voiceHintLabel');
+  var voiceHintText = document.getElementById('voiceHintText');
+  var voiceCancelHintText = document.getElementById('voiceCancelHintText');
+  var voiceStartY = 0;
+  var voiceCancelling = false;
+  function showVoiceHint(on) {
+    if (on) { voiceHint.classList.add('show'); } else { voiceHint.classList.remove('show'); }
+  }
+  function setVoiceCancelling(on) {
+    voiceCancelling = on;
+    if (on) {
+      voiceHint.classList.add('cancelling');
+      voiceHintLabel.textContent = '松开手指，取消发送';
+      voiceCancelHintText.textContent = '取消发送';
+    } else {
+      voiceHint.classList.remove('cancelling');
+      voiceHintLabel.textContent = '松开 发送';
+      voiceCancelHintText.textContent = '上滑取消';
+    }
+  }
+
+  /* 原生按钮拖动时回传是否进入取消区（微信式上滑取消） */
+  window.wechatVoiceDrag = function (cancelling) {
+    if (!voiceHint.classList.contains('show')) return;
+    setVoiceCancelling(!!cancelling);
+  };
+
+  /* 松手取消：必须由原生显式通知页面收起浮层，否则红色提示会一直挂在屏幕上 */
+  window.wechatVoiceCancelled = function () {
+    voiceActive = false;
+    voiceHint.classList.remove('cancelling');
+    showVoiceHint(false);
+  };
+
+  // 新 APK：原生按钮触控录音，JS 只负责显示/隐藏按钮和接收转写结果
+  // 旧 APK 兼容：holdTalk 触控 + 旧桥接方法
+  if (!useNativeVoice) {
+    holdTalk.addEventListener('touchstart', function (e) {
+      e.preventDefault();
+      if (voiceActive) return;
+      if (!sttReady) { toastText('请先升级 APK 至最新版本'); return; }
+      voiceActive = true;
+      var t = e.touches[0];
+      voiceStartY = t.clientY;
+      voiceCancelling = false;
+      voiceHint.classList.remove('cancelling');
+      voiceHintText.textContent = '';
+      voiceHintLabel.textContent = '正在识别，松开结束';
+      voiceCancelHintText.textContent = '上滑取消';
+      holdTalk.classList.add('recording');
+      showVoiceHint(true);
+      try { if (window.WechatBridge && window.WechatBridge.startVoice) window.WechatBridge.startVoice(); else throw new Error('bridge unavailable'); }
+      catch (err) { voiceActive = false; showVoiceHint(false); toastText('请升级 APK 至最新版本'); }
+    });
+    holdTalk.addEventListener('touchmove', function (e) {
+      var y = e.touches[0].clientY;
+      if (voiceStartY - y > 60) {
+        if (!voiceCancelling) setVoiceCancelling(true);
+      } else {
+        if (voiceCancelling) setVoiceCancelling(false);
+      }
+    });
+    holdTalk.addEventListener('touchend', function (e) {
+      e.preventDefault();
+      holdTalk.classList.remove('recording');
+      if (voiceCancelling) {
+        voiceActive = false;
+        showVoiceHint(false);
+        try { if (window.WechatBridge && window.WechatBridge.cancelVoice) window.WechatBridge.cancelVoice(); } catch (err) {}
+      } else {
+        try { if (window.WechatBridge && window.WechatBridge.stopVoice) window.WechatBridge.stopVoice(); } catch (err) {}
+      }
+      voiceCancelling = false;
+    });
+    holdTalk.addEventListener('touchcancel', function () {
+      holdTalk.classList.remove('recording');
+      voiceActive = false;
+      showVoiceHint(false);
+      try { if (window.WechatBridge && window.WechatBridge.cancelVoice) window.WechatBridge.cancelVoice(); } catch (err) {}
+      voiceCancelling = false;
+    });
+  }
+
+  window.wechatVoiceProgress = function (stage, percent, message) {
+    if (stage === 'uploading') {
+      // 松手即出语音条，浮层立即收起（微信行为）
+      showVoiceHint(false);
+      setVoiceCancelling(false);
+      return;
+    }
+    showVoiceHint(true);
+    setVoiceCancelling(false);
+    if (stage === 'recording') voiceHintLabel.textContent = '松开 发送';
+    else if (stage === 'transcribing') voiceHintLabel.textContent = '正在识别…';
+    voiceHintText.textContent = message || '';
+  };
+
+  /* 实时识别中间结果：显示在语音提示里 */
+  window.wechatVoicePartial = function (text) {
+    if (typeof text === 'string' && text.trim() !== '') {
+      voiceHintText.textContent = text.trim();
+    }
+  };
+
+  /* 转写结果先进入输入框，由用户确认或修改后再发送。 */
+  window.wechatVoiceResult = function (text) {
+    voiceActive = false;
+    showVoiceHint(false);
+    if (typeof text !== 'string' || text.trim() === '') { toastText('没有识别到内容'); return; }
+    setVoiceMode(false);
+    input.value = text.trim();
+    autoGrow();
+    input.focus();
+    toastText('语音已转成文字，请确认后发送');
+  };
+  /* 语音识别出错提示 */
+  window.wechatVoiceError = function (msg) {
+    voiceActive = false;
+    showVoiceHint(false);
+    toastText(msg || '语音识别失败');
+  };
+
+  /* ── 语音条（微信式）─────────────────────
+     松手即发语音条；电脑后台识别并自动送入真实会话；长按菜单可看文字/删除。 */
+  var voiceRecords = {};      // id -> 记录
+  var voiceRows = {};         // id -> row 元素
+  var voiceAudio = null;      // 当前播放的 Audio
+  var voicePlayingId = null;
+  var voicePollTimer = null;
+
+  function fmtDuration(ms) {
+    var sec = Math.max(1, Math.round((Number(ms) || 0) / 1000));
+    return ms?sec+' 秒':'播放语音';
+  }
+
+  function stopVoicePlayback() {
+    if (voiceAudio) { try { voiceAudio.pause(); } catch (e) {} voiceAudio = null; }
+    if (voicePlayingId && voiceRows[voicePlayingId]) {
+      var b = voiceRows[voicePlayingId].querySelector('.vbubble');
+      if (b) {b.classList.remove('playing');b.setAttribute('aria-pressed','false');}
+    }
+    voicePlayingId = null;
+  }
+
+  function playVoice(id) {
+    if (voicePlayingId === id) { stopVoicePlayback(); return; }
+    stopVoicePlayback();
+
+    try {
+      var rec=voiceRecords[id]||{};
+      voiceAudio = new Audio(rec.audioUrl||('/api/wechat/voice/'+encodeURIComponent(id)));
+      voicePlayingId = id;
+      var row = voiceRows[id];
+      if (row) { var b = row.querySelector('.vbubble'); if (b) {b.classList.add('playing');b.setAttribute('aria-pressed','true');} }
+      voiceAudio.onloadedmetadata=function(){if(row&&voiceAudio){var d=row.querySelector('.vb-dur');if(d)d.textContent=fmtDuration(voiceAudio.duration*1000);}};
+      voiceAudio.onended = stopVoicePlayback;
+      voiceAudio.onerror = function () { stopVoicePlayback(); toastText('该语音已过期或无法播放'); };
+      voiceAudio.play().catch(function () { stopVoicePlayback(); toastText('无法播放，请检查网络'); });
+    } catch (e) { stopVoicePlayback(); }
+  }
+
+  function renderVoiceStatus(row, rec) {
+    var bub = row.querySelector('.vbubble');
+    if (bub) bub.classList.toggle('loading', rec.status === 'pending');
+    var s = row.querySelector('.vstatus');
+    if (!s) return;
+    if (rec.status === 'pending') { s.textContent = '识别中…'; s.className = 'vstatus'; }
+    else if (rec.status === 'failed') { s.textContent = rec.error || '识别失败'; s.className = 'vstatus err'; }
+    else { s.textContent = ''; s.className = 'vstatus'; }
+  }
+
+  function setVoiceText(row, text) {
+    var box = row.querySelector('.vtext');
+    if (!box) return;
+    if (typeof text === 'string' && text !== '') { box.textContent = text; }
+    else { box.textContent = '（还没有识别结果）'; }
+  }
+
+  function toggleVoiceText(row) {
+    var box = row.querySelector('.vtext');
+    if (!box) return;
+    box.hidden = !box.hidden;
+    scrollBottom();
+  }
+
+  function addVoiceRow(rec, opts) {
+    opts = opts || {};
+    if(voiceRows[rec.id]&&voiceRows[rec.id].parentNode){upsertVoice(rec,opts);return voiceRows[rec.id];}
+    var row = document.createElement('div');
+    row.className = 'row '+(opts.side==='other'?'other':'me');
+    row.dataset.voiceId = rec.id;
+    if (opts.id) row.dataset.id = opts.id;
+
+    var av = document.createElement('div');
+    av.className = 'avatar';
+    var avatarSrc=opts.side==='other'?cfg.avatarOther:cfg.avatarMe;
+    if (avatarSrc) av.style.backgroundImage='url("'+avatarSrc+'")';
+    wireAvatar(av,opts.side==='other'?'other':'me',row);
+
+    var wrap = document.createElement('div');
+    wrap.className = 'vwrap';
+
+    var bub = document.createElement('button');
+    bub.type='button';bub.setAttribute('aria-label','播放语音');bub.setAttribute('aria-pressed','false');
+    bub.className = 'vbubble';
+    bub.innerHTML = '<span class="vb-dur">' + fmtDuration(rec.durationMs) + '</span>'
+      + '<svg class="vb-sound" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+      + '<path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor" stroke="none"/>'
+      + '<path class="arc" d="M15.4 8.6a5 5 0 0 1 0 6.8"/>'
+      + '<path class="arc arc2" d="M18.4 5.8a9 9 0 0 1 0 12.4"/>'
+      + '</svg>';
+    bub.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (selectMode) { toggleSelect(row); return; }
+      playVoice(rec.id);
+    });
+
+    var statusEl = document.createElement('div');
+    statusEl.className = 'vstatus';
+
+    var textEl = document.createElement('div');
+    textEl.className = 'vtext';
+    textEl.hidden = true;
+
+    wrap.appendChild(bub); wrap.appendChild(statusEl);
+    if(rec.transcript){
+      var toggle=document.createElement('button');toggle.className='voice-caption';toggle.textContent='查看文字';toggle.setAttribute('aria-expanded','false');
+      toggle.addEventListener('click',function(e){e.stopPropagation();if(selectMode){toggleSelect(row);return;}toggleVoiceText(row);toggle.textContent=textEl.hidden?'查看文字':'收起文字';toggle.setAttribute('aria-expanded',String(!textEl.hidden));});
+      wrap.appendChild(toggle);
+    }
+    wrap.appendChild(textEl);
+    row.appendChild(av); row.appendChild(wrap);
+
+    attachLongPress(row,bub,openVoiceSheet);
+    attachLongPress(row,textEl,openTextSheet);
+    row.addEventListener('click', function () { if (selectMode) toggleSelect(row); });
+
+    if(opts.before&&opts.before.parentNode===msgs)msgs.insertBefore(row,opts.before);
+    else msgs.appendChild(row);
+    voiceRows[rec.id] = row;
+    if (rec.status) renderVoiceStatus(row, rec);
+    if (rec.transcript) setVoiceText(row, rec.transcript);
+    scrollBottom();
+    return row;
+  }
+
+  function upsertVoice(rec, opts) {
+    voiceRecords[rec.id] = rec;
+    var row = voiceRows[rec.id];
+    if (!row) { addVoiceRow(rec, opts); return; }
+    if(opts&&opts.id)row.dataset.id=opts.id;
+    var dur = row.querySelector('.vb-dur');
+    if (dur) dur.textContent = fmtDuration(rec.durationMs);
+    renderVoiceStatus(row, rec);
+    if (rec.transcript) setVoiceText(row, rec.transcript);
+  }
+
+  /* 手机松手后立即插入语音条（乐观渲染），随后轮询识别状态。 */
+  window.wechatVoiceSent = function (id, durationMs) {
+    if (typeof id !== 'string' || id === '') { toastText('语音发送失败'); return; }
+    setVoiceMode(false);
+    showVoiceHint(false);
+    upsertVoice({ id: id, durationMs: durationMs, status: 'pending', ts: Date.now() });
+    voiceActive = false;
+    startVoicePolling();
+  };
+
+  function startVoicePolling() {
+    if (voicePollTimer) return;
+    voicePollTimer = setInterval(function () {
+      api('/api/wechat/voices').then(function (r) {
+        if (!r || r.ok !== true || !r.voice) return;
+        var pending = false;
+        for (var i = 0; i < r.voice.length; i++) {
+          var rec = r.voice[i];
+          // Status polling must never rebuild historical or deleted messages.
+          var row=voiceRows[rec.id];
+          if(!row||!row.parentNode||(row.dataset.id&&hiddenSet[row.dataset.id]))continue;
+          upsertVoice(rec);
+          if (rec.status === 'pending') pending = true;
+        }
+        if (!pending) { clearInterval(voicePollTimer); voicePollTimer = null; }
+      }).catch(function () {});
+    }, 1500);
+  }
+
+  /* 载入历史语音条：把会话里的「【语音】…」文本消息映射到语音记录。
+     返回 msgId -> rec；渲染时必须在原消息位置就地插入，不能统一追加到列表末尾。 */
+  function bindVoiceHistory(history) {
+    return api('/api/wechat/voices').then(function (r) {
+      var byMsg = {};
+      if (!r || r.ok !== true || !r.voice) return byMsg;
+      var byStableId={};
+      r.voice.forEach(function(rec){if(rec.messageId)byStableId[rec.messageId]=rec;});
+      for (var i = 0; i < history.length; i++) {
+        var m = history[i];
+        if (m.role !== 'user' || typeof m.text !== 'string' || m.text.indexOf('【语音】') !== 0) continue;
+        var rec=byStableId[String(m.id||'').split(':').pop()];
+        if(!rec)continue;
+        // 已删除（隐藏）的语音条不再重建：否则刷新后会被重新画出来
+        if (m.id && hiddenSet[m.id]) continue;
+        byMsg[m.id] = rec;
+      }
+      return byMsg;
+    }).catch(function(){return {};});
+  }
+
+  /* 乐观插入、还没拿到会话消息 id 的语音条（用于回填 id 以便删除）。 */
+  function pendingVoiceRow() {
+    for (var id in voiceRows) {
+      var row = voiceRows[id];
+      if (row && row.parentNode && !row.dataset.id) return row;
+    }
+    return null;
+  }
+
+  /* ── 语音条操作菜单 ─────────────────────── */
+  var voiceSheetRow = null;
+  var voiceSheetMask = document.getElementById('voiceSheetMask');
+  var voiceSheet = document.getElementById('voiceSheet');
+  function closeVoiceSheet() {
+    voiceSheet.classList.remove('show');
+    voiceSheetMask.classList.remove('show');
+    voiceSheetRow = null;
+  }
+  function openVoiceSheet(row) {
+    closePopovers();voiceSheetRow = row;
+    var rec = voiceRecords[row.dataset.voiceId] || {};
+    var hasText = typeof rec.transcript === 'string' && rec.transcript !== '';
+    var btn = document.getElementById('voiceTextBtn');
+    var box = row.querySelector('.vtext');
+    btn.textContent = (box && !box.hidden) ? '收起文字' : (hasText ? '转文字' : '转文字（识别中）');
+    btn.disabled = !hasText;
+    voiceSheetMask.classList.add('show');
+    voiceSheet.classList.add('show');
+  }
+  voiceSheetMask.addEventListener('click', closeVoiceSheet);
+  document.getElementById('voiceCancelBtn').addEventListener('click', closeVoiceSheet);
+  document.getElementById('voiceTextBtn').addEventListener('click', function () {
+    if (voiceSheetRow) toggleVoiceText(voiceSheetRow);
+    closeVoiceSheet();
+  });
+  document.getElementById('voiceDeleteBtn').addEventListener('click', function () {
+    var row = voiceSheetRow;
+    closeVoiceSheet();
+    if (!row) return;
+    if (!selectMode) enterSelectMode();
+    var id = row.dataset.id;
+    if (id) { selectedIds[id] = true; updateRowChecks(); }
+  });
+
+  /* ── 文字消息操作菜单：复制文字 / 多选删除 ─────────────── */
+  var textSheetRow = null;
+  var textSheetMask = document.getElementById('textSheetMask');
+  var textSheet = document.getElementById('textSheet');
+  function closeTextSheet() {
+    textSheet.classList.remove('show');
+    textSheetMask.classList.remove('show');
+    textSheetRow = null;
+  }
+  function openTextSheet(row) {
+    closePopovers();textSheetRow = row;
+    var text = rowText(row);
+    document.getElementById('textCopyBtn').textContent = text === '' ? '复制文字（无内容）' : '复制文字';
+    document.getElementById('textCopyBtn').disabled = text === '';
+    document.getElementById('textRangeBtn').disabled = text === '';
+    textSheetMask.classList.add('show');
+    textSheet.classList.add('show');
+  }
+  /** 气泡里的纯文本（assistant 长回复被拆成多行时，只取当前这一条）。 */
+  function rowText(row) {
+    var bub = row.querySelector('.bubble');
+    return row._messageText||(row.querySelector('.vtext')||{}).textContent||'';
+  }
+  /** 复制到剪贴板：先试异步 API，失败回退到 execCommand（旧 WebView 只能走这条）。 */
+  function legacyCopyText(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { ta.setSelectionRange(0, text.length); } catch (e) {}
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+  function copyText(text) {
+    if (text === '') { toastText('这条没有可复制的文字'); return; }
+    var fallback = function () { toastText(legacyCopyText(text) ? '已复制' : '复制失败，可在电脑上选中复制'); };
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(text).then(function () { toastText('已复制'); }, fallback);
+        return;
+      }
+    } catch (e) {}
+    fallback();
+  }
+  textSheetMask.addEventListener('click', closeTextSheet);
+  document.getElementById('textSheetCancel').addEventListener('click', closeTextSheet);
+  document.getElementById('textCopyBtn').addEventListener('click', function () {
+    var row = textSheetRow;
+    closeTextSheet();
+    if (row) copyText(rowText(row));
+  });
+  document.getElementById('textSelectBtn').addEventListener('click', function () {
+    var row = textSheetRow;
+    closeTextSheet();
+    if (!row) return;
+    if (!selectMode) enterSelectMode();
+    var id = row.dataset.id;
+    if (id) { selectedIds[id] = true; updateRowChecks(); }
+    else toastText('这条消息还没有电脑侧的记录 id，无法多选删除');
+  });
+
+
+  var managerLoaded=false,managerVisible=false;
+  function openManager(){
+    closePopovers();setVoiceMode(false);var frame=document.getElementById('managerFrame');
+    if(!managerLoaded){frame.src='/api/wechat/assistant/manager?device='+encodeURIComponent(deviceId);managerLoaded=true;}
+    document.getElementById('managerOverlay').hidden=false;managerVisible=true;notifyManager();
+    ['topbar','msgs','inputbar'].forEach(function(id){document.getElementById(id).inert=true;});
+    if(!history.state||!history.state.whaleManager)history.pushState({whaleManager:true},'',location.href);
+  }
+  function closeManager(fromHistory){
+    if(!managerVisible)return;document.getElementById('managerOverlay').hidden=true;managerVisible=false;notifyManager();
+    ['topbar','msgs','inputbar'].forEach(function(id){document.getElementById(id).inert=false;});
+    if(!fromHistory&&history.state&&history.state.whaleManager)history.back();
+  }
+  function notifyManager(){var frame=document.getElementById('managerFrame');if(frame.contentWindow)frame.contentWindow.postMessage({type:'whale-manager-visibility',visible:managerVisible},location.origin);}
+  document.getElementById('managerFrame').addEventListener('load',notifyManager);
+  document.getElementById('managerBack').addEventListener('click',function(){closeManager();});
+  document.getElementById('managerReload').addEventListener('click',function(){document.getElementById('managerFrame').contentWindow.location.reload();});
+  window.addEventListener('popstate',function(){closeManager(true);});
+  window.addEventListener('message',function(e){
+    var frame=document.getElementById('managerFrame');
+    if(e.origin===location.origin&&e.source===frame.contentWindow&&e.data&&e.data.type==='whale-close-manager')closeManager();
+  });
+  function closePopovers(){closeTextSheet();closeVoiceSheet();hideAvatarMenu();hideNickDialog();document.getElementById('selectionDialog').hidden=true;document.getElementById('selectionMask').classList.remove('show');}
+  function pickAppearance(kind,side){
+    var picker=document.getElementById('appearanceFile');picker.dataset.kind=kind;picker.dataset.side=side||'me';picker.value='';picker.click();
+  }
+  document.getElementById('appearanceFile').addEventListener('change',function(e){
+    var picker=e.target,file=picker.files&&picker.files[0];if(!file)return;
+    if(!file.type.startsWith('image/')||file.size>12*1024*1024){toastText('请选择12MB以内的图片');return;}
+    var kind=picker.dataset.kind,side=picker.dataset.side,url=URL.createObjectURL(file),img=new Image();
+    img.onload=function(){
+      var limit=kind==='avatar'?640:1600,scale=Math.min(1,limit/Math.max(img.width,img.height)),canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);URL.revokeObjectURL(url);
+      var data=canvas.toDataURL('image/jpeg',.88);if(kind==='avatar')window.wechatAvatarPicked(side,data);else window.wechatBackgroundPicked(data);
+    };img.onerror=function(){URL.revokeObjectURL(url);toastText('图片读取失败，请换一张');};img.src=url;
+  });
+  document.getElementById('textRangeBtn').addEventListener('click',function(){
+    var text=textSheetRow?rowText(textSheetRow):'';closeTextSheet();if(!text)return;
+    document.getElementById('selectionText').textContent=text;document.getElementById('selectionDialog').hidden=false;document.getElementById('selectionMask').classList.add('show');
+  });
+  function closeSelection(){document.getElementById('selectionDialog').hidden=true;document.getElementById('selectionMask').classList.remove('show');}
+  document.getElementById('selectionClose').addEventListener('click',closeSelection);document.getElementById('selectionMask').addEventListener('click',closeSelection);
+  document.getElementById('imageClose').addEventListener('click',function(){document.getElementById('imageViewer').hidden=true;});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'){closePopovers();document.getElementById('imageViewer').hidden=true;closeManager();}});
+
+  /* ── 扫码 / 配对 ───────────────────────── */
+  function pairFromUrl(url) {
+    var u;
+    try { u = new URL(url); } catch (err) { toastText('链接格式不对'); return; }
+    // 导航式配对：服务器在 /wechat?pair= 上校验令牌 → 下发设备 cookie → 跳回聊天页
+    location.href = url;
+  }
+  function startScan() {
+    try {
+      if (window.WechatBridge && typeof window.WechatBridge.scanQR === 'function') {
+        window.WechatBridge.scanQR();
+        return;
+      }
+    } catch (e) {}
+    toastText('当前浏览器不支持扫码，请粘贴配对链接');
+  }
+  window.wechatOnScanResult = function (url) {
+    if (typeof url === 'string' && url !== '') pairFromUrl(url);
+  };
+  document.getElementById('scanBtn').addEventListener('click', startScan);
+  document.getElementById('guideScanBtn').addEventListener('click', startScan);
+  document.getElementById('pasteBtn').addEventListener('click', function () {
+    pairFromUrl(document.getElementById('pasteInput').value.trim());
+  });
+
+  /* ── 键盘顶起 + 输入条增高时，消息区底部动态跟随 ── */
+  function syncLayout() {
+    var inputbar = document.getElementById('inputbar');
+    var kb = 0;
+    if (window.visualViewport) {
+      kb = Math.max(0, window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop);
+    }
+    inputbar.style.bottom = kb + 'px';
+    msgs.style.bottom = (inputbar.offsetHeight + kb) + 'px';
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncLayout);
+    window.visualViewport.addEventListener('scroll', syncLayout);
+  }
+  window.addEventListener('resize', syncLayout);
+
+  loadState();
+})();
+</script>
+</body>
+</html>

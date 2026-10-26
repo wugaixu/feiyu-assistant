@@ -1,0 +1,23 @@
+{
+  "source": "https://github.com/chauko0423/ohwhale-deploy",
+  "revision": "8988070a1102bebb195f622c995d77207b183672",
+  "files": [
+    {
+      "file": "s1v3.ckpt",
+      "bytes": 155284856,
+      "sha256": "87133414860ea14ff6620c483a3db5ed07b44be42e2c3fcdad65523a729a745a",
+      "urls": [
+        "https://hf-mirror.com/lj1995/GPT-SoVITS/resolve/8f8857563c040d542de108a2c18b0425abd6c9c5/s1v3.ckpt",
+        "https://huggingface.co/lj1995/GPT-SoVITS/resolve/8f8857563c040d542de108a2c18b0425abd6c9c5/s1v3.ckpt"
+      ]
+    },
+    {
+      "file": "dafeiyu_e14_s280.pth",
+      "bytes": 134946291,
+      "sha256": "08a5f8b2d0b85876d7a16937cd801f49844bd90c1316f3044c2a408d7c85a905",
+      "urls": [
+        "https://github.com/chauko0423/ohwhale-deploy/releases/download/v0.1.0a1/dafeiyu_e14_s280.pth"
+      ]
+    }
+  ]
+}

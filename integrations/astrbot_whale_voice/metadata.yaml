@@ -1,0 +1,5 @@
+name: whale_voice
+display_name: 鲸聊语音
+desc: 协同已有语音插件，提供本机系统女声备用。
+version: v1.1.0
+author: Local workflow

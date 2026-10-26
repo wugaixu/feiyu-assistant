@@ -1,0 +1,63 @@
+# GPT_SoVITS 插件兼容补丁：鲸聊语音许可守门（2026-10-25）
+
+目的：`gsv_tts` 是普通 LLM 工具，抖音私信、公开评论、自主任务里模型也会调用；调用会白等约 30 秒冷启动，再被出站拒绝。守门只让“带有效鲸聊许可的轮次”看到并执行语音。
+
+安装位置：`<运行目录>/astrbot/runtime/data/plugins/astrbot_plugin_GPT_SoVITS/main.py`
+配套模块：项目 `app/voice_gate.py`（只读检查 `whale_voice_permits` 与 `live_tasks`，要求仍是 `processing` 且 `transport=whale`）。
+市场升级覆盖 main.py 后需要重新应用下面三处。
+
+## 1. 文件顶部（替换原有 import 段）
+
+```python
+import asyncio
+import base64
+import copy
+import random
+import sys
+from pathlib import Path
+
+from astrbot.api import logger
+...
+
+PROJECT = Path(r'__PROJECT_DIR__')
+if str(PROJECT) not in sys.path:
+    sys.path.insert(0, str(PROJECT))
+try:
+    from app import voice_gate
+except Exception:
+    voice_gate = None
+    logger.warning("voice_gate unavailable; GPT-SoVITS speech gate degraded")
+```
+
+## 2. 类内 hook（放在 `_wait_ready` 之前）
+
+```python
+    @filter.on_llm_request(priority=-9012)
+    async def _gate_speech(self, event: AstrMessageEvent, req):
+        """Whale compatibility: only a permitted Whale turn offers speech."""
+        if voice_gate is None or req.func_tool is None:
+            return
+        try:
+            if voice_gate.allowed(event.get_message_str()):
+                return
+            req.func_tool = copy.copy(req.func_tool)
+            req.func_tool.remove_tool('gsv_tts')
+        except Exception:
+            return
+```
+
+## 3. `gsv_tts` 工具开头
+
+```python
+        try:
+            if voice_gate is not None and not voice_gate.allowed(event.get_message_str()):
+                return voice_gate.status_text(event.get_message_str()) or "这一轮没有鲸聊语音许可，用文字回复即可。"
+            if not await self._wait_ready():
+                return "本地语音服务正在启动，这次先用文字回复。"
+```
+
+## 说明
+
+- 命令“说/gsv”保持人工可用，不受守门影响（人工在 AstrBot 面板触发）。
+- `whale_voice` 插件已卸载，不再有系统女声工具；守门只影响 `gsv_tts`。
+- 若 `app.voice_gate` 导入失败，插件记录一条 warning，此时不隐藏工具、允许调用（与旧行为一致），需要人工排查项目路径。

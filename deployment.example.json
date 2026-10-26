@@ -1,0 +1,11 @@
+{
+  "runtime_dir": "D:/FeiyuData",
+  "owner_uid": "1234567890123456",
+  "account_uid": "2345678901234567",
+  "owner_profile": "/user/REPLACE_WITH_YOUR_SEC_UID",
+  "codex_workspace": "D:/Projects/feiyu-agent",
+  "codex_home": null,
+  "dsh_home": null,
+  "dsh_resources": null,
+  "python": null
+}

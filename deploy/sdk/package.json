@@ -1,0 +1,8 @@
+{
+  "name": "feiyu-sdk-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "douyin-im": "1.1.0"
+  }
+}
