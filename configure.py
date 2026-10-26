@@ -59,6 +59,7 @@ def configure(cfg):
     return installed
 
 def main():
+    if hasattr(sys.stdout,'reconfigure'):sys.stdout.reconfigure(errors='backslashreplace')
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',type=Path,default=REPO/'deployment.local.json')
     p.add_argument('--runtime-dir');p.add_argument('--owner-uid');p.add_argument('--account-uid');p.add_argument('--owner-profile');p.add_argument('--codex-workspace')
     args=p.parse_args();cfg=json.loads(args.config.read_text(encoding='utf-8')) if args.config.exists() else {}
