@@ -95,7 +95,7 @@ def assess(workflow,target,policies,data,dependencies,agent,storage,now=None):
     elif workflow.get('reply_assessment'):
         result=workflow['reply_assessment'];add('reply','私信回复发送',result['state'],result['detail'],result['metric'])
     else:add('reply','私信回复发送','idle','发送通道就绪；平台回执不等于接收端已收到',f'最小间隔 {dm.get("min_send_gap_seconds",1)} 秒')
-    comments=data.get('comments',[]);active=sum(x['status'] in ('pending','attempted') for x in comments)
+    comments=data.get('comments',[]);active=sum(x['status'] in ('waiting_for_reply','pending','attempted') for x in comments)
     overdue=sum(x['status'] in ('pending','attempted') and now-x.get('created',now)>600 for x in comments)
     if not (policies.get('shared_comment') or {}).get('enabled'):add('comment','作品评论与主人提及','off','公开评论开关已关闭','自动刷视频仍暂停','settings')
     elif (policies.get('shared_comment') or {}).get('_warnings'):add('comment','作品评论与主人提及','warn','评论设置含无效额度，已使用默认值；请在设置中修正','配置待修正','settings')
@@ -132,9 +132,11 @@ def collect(workflow,target,policies,outbound,root,db_path):
     except Exception:pass
     if target.get('provider')=='dsh':
         try:
-            from app.dsh_client import sessions
+            from app.dsh_client import sessions,capabilities
+            from app.workflow_protocol import VERSION
             selected=next((s for s in sessions(timeout=2) if s['id']==target.get('effective')),None)
             agent={'available':bool(selected),**(selected or {}),'reason':'所选DSH会话已不可用' if not selected else ''}
+            if capabilities(timeout=2).get('protocol_version')!=VERSION:agent={'available':False,'reason':'DSH连接器统一协议未加载，不投递新任务'}
         except Exception:agent={'available':False,'reason':'DSH连接不可用；待投递任务保留，不改投其他主体'}
     elif target.get('provider')=='astrbot':
         try:
@@ -142,9 +144,13 @@ def collect(workflow,target,policies,outbound,root,db_path):
             state=astrbot_client.state(timeout=2)
             selected=next((s for s in state.get('sessions',[]) if s.get('id')==target.get('effective')),None)
             available=bool(state.get('online') and selected)
+            from app.workflow_protocol import astrbot_reader
+            reader=astrbot_reader()
+            available=available and reader['ready']
             reason=''
             if not state.get('online'):reason='AstrBot连接不可用；待投递任务保留，不改投其他主体'
             elif not selected:reason='所选AstrBot会话已不可用，请在会话投递页重新选择'
+            elif not reader['ready']:reason=reader['reason']
             agent={'available':available,'title':(selected or {}).get('title'),'reason':reason}
         except Exception:agent={'available':False,'reason':'AstrBot连接不可用；待投递任务保留，不改投其他主体'}
     else:

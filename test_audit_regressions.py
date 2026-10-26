@@ -162,7 +162,7 @@ class AuditTests(unittest.TestCase):
         # Worker owns its connection, so use a file-backed isolated store.
         target=self.root/'assistant.sqlite3'
         disk=sqlite3.connect(target);self.db.backup(disk);disk.close()
-        with patch.object(aw.client,'chat',return_value=[{'type':'text','text':'你好呀'}]),patch.object(aw,'maybe_comment',side_effect=RuntimeError('comment failure')):
+        with patch.object(aw.client,'chat',return_value=[{'type':'text','text':'你好呀'}]):
             aw.run('task',{'session_id':'session'})
         disk=sqlite3.connect(target)
         try:

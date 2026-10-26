@@ -9,7 +9,8 @@ SUCCESS=outbox.SUCCESS
 def schema(db):
     outbox.schema(db)
 
-def finish(db,task_id,parts):
+def finish(db,task_id,parts,*,status='done'):
+    if status not in ('done','needs_input','failed'):raise ValueError('Invalid completion status')
     if not isinstance(parts,list) or not 1<=len(parts)<=MAX_PARTS:raise ValueError('Reply requires 1..12 parts')
     prepared=[];total=0
     for part in parts:
@@ -35,6 +36,8 @@ def finish(db,task_id,parts):
         else:raise ValueError('Unsupported outgoing part')
     if total>MAX_TOTAL_TEXT:raise ValueError('Reply too long')
     schema(db)
+    from app.shared_comments import schema as comment_schema
+    comment_schema(db)
     from app import channels
     channels.schema(db)
     with db:
@@ -60,7 +63,13 @@ def finish(db,task_id,parts):
             else:
                 db.execute('INSERT INTO reply_outbox(id,task_id,owner,text,kind,seq,work_json) VALUES(?,?,?,?,?,?,?)',
                            (key,task_id,row[0],'','share',seq,value))
-        db.execute("UPDATE live_tasks SET status='done',result=? WHERE id=?",(json.dumps(parts,ensure_ascii=False),task_id))
+        db.execute('UPDATE live_tasks SET status=?,result=? WHERE id=?',(status,json.dumps(parts,ensure_ascii=False),task_id))
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='chat_dispatch'").fetchone():
+            db.execute("UPDATE chat_dispatch SET status='processed' WHERE task_id=?",(task_id,))
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='video_rounds'").fetchone():
+            db.execute('UPDATE video_rounds SET status=? WHERE id=?',(status,task_id))
+        db.execute("UPDATE shared_comment_outbox SET status=? WHERE task_id=? AND status='waiting_for_reply'",
+                   ('pending' if status=='done' else 'cancelled',task_id))
 
 def allowed(db,key):
     return outbox.allowed(db,key)

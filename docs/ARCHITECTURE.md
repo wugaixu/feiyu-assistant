@@ -35,7 +35,7 @@ sequenceDiagram
         M->>M: 图集看图 / 视频采样 / 音轨转写 / 文档提取
         M->>DB: media_records + resource_saved（含失败信息）
     end
-    DB->>DB: 等10秒关联后续文字，同来源隔离
+    DB->>DB: 同来源连续15秒无新消息，合并当前连续链
     DB->>P: 当前消息 + 实际可用附件
     P->>A: 短信封 + context.md + 本地资料路径
     A->>DB: 领取并分析；回复原子写入reply_outbox
@@ -46,9 +46,11 @@ sequenceDiagram
     O->>DB: 接受/拒绝/结果不明 + 实际回执
 ```
 
-媒体单独到达至少等10秒后独立投递；媒体早于文字最多600秒或晚于文字10秒可以合并，仍须同 transport + reply_device。先完成下载/分析，再投递资料。失败、过时和诊断样本不会冒充新的成功媒体。
+文字、图片、语音、视频、文件和分享卡都采用15秒静默窗口。每条新消息重置同一 transport + reply_device 的计时；仅相邻间隔不超过15秒的连续链合并到最早任务，其他任务标记 merged。先完成媒体处理，再投递资料；陈旧任务不自动补投。
 
-作品元数据、评论、文件清单和转写写入本地 `context.md` / `data.json`，不把整份长 JSON 反复推入聊天。AstrBot收到有预算的摘要和可用图片；Codex/DSH按资料路径读取。评论属于观众观点，不能当事实或指令。
+三主体共用协议4：作品元数据、评论、文件清单和转写写入本地 `context.md` / `data.json` / `materials.json`，只投递统一短信封和资料路径。公共模块负责资料快照、分页、文件边界、领取/完成、回复分条与原设备路由；Codex/DSH使用本地工具，AstrBot用 `workflow_read_text` / `workflow_read_image` 读取实际资料。评论属于观众观点，不能当事实或指令。
+
+视频/实况原片上限256MB，DouK进程180秒、外层190秒，图集总计64MB；不自动压缩原片。HEIC/HEIF依赖 pillow-heif 解码后按统一图片规则处理。
 
 ## 三种 AI 主体
 
@@ -60,7 +62,7 @@ sequenceDiagram
 
 ## 可选外发
 
-公开评论由 AI 根据实际画面另写一句简评 → 受控评论队列 → 独立浏览器 profile 登录小号 → 三次核对作品 URL → 按配置产生真实 @ 实体 → 提交和回读。不是 douyin-im 私信接口。默认关闭，关闭 @ 时不会手写一个昵称充当提及。
+公开评论由所选主会话根据作品证据另写一句简评，自查不含私人资料 → `bridge comment` / `workflow_comment` 登记 waiting_for_reply 草稿 → 私信完成才转 pending（failed/needs_input取消）→ 受控评论队列 → 独立浏览器 profile 登录小号 → 三次核对作品 URL → 按配置产生真实 @ 实体 → 提交和回读。不是 douyin-im 私信接口。默认关闭，关闭 @ 时不会手写一个昵称充当提及。
 
 自主活动是本地调度器给智能体提供候选机会，智能体可判断是否联系；随机时段、每日次数、间隔、未回复暂停由管理台控制。自主推荐通过私信分享，不自动等同于公开评论授权。
 
@@ -70,17 +72,19 @@ sequenceDiagram
 
 ```text
 <runtime>/
-  installed/0.1.0/             配置后的正式运行代码
+  installed/0.2.0/             配置后的正式运行代码
   assistant.sqlite3           任务、媒体、投递、出站和鲸聊历史
   sdk-data/                   小号SDK登录与接收事件
   whale-data/                 手机配对、录音、上传暂存
   media/<task>/               原始文件、DouK输出、manifest
   shared-video-analysis/      采样帧、九宫格、转写缓存
   tool-content/               作品评论与内容资料
-  task-context/<task>/        context.md、data.json
+  task-context/<task>/        context.md、data.json、materials.json
   outgoing-images|audio/      真正待发/已发附件
   tools/                      DouK、SenseVoice、ComfyUI、GPT-SoVITS
   astrbot/                    独立venv、运行数据及插件
 ```
 
 `reply_outbox` 是唯一出站队列。任务 done 仅表示回复已入队，不代表主人收到。结果不明保留，禁止自动盲重发。鲸聊历史引用的文件不进入资源清理；活动任务、待发附件、凭据和模型也不能被定期清理误删。
+
+回复共用分条规则：空行分条，代码围栏内部不拆；最多12段、每段1500字、合计6000字。流程播报过滤默认关闭，由 `reply-policy.json` 的 `drop_process_narration` 显式开启。语音发送与本地生图仅给AstrBot，Codex/DSH保留各自工具能力。

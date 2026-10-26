@@ -1691,6 +1691,33 @@ export function startGateway(host, config = {}) {
     })
   }
 
+  let publicDnsTimer = undefined
+
+  async function publicDnsPresent(host) {
+    // When the host was offline, Tailscale withdraws the Funnel ingress DNS
+    // record. Ask an external resolver: the local MagicDNS answer always works.
+    try {
+      const response = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(host) + '&type=A',
+        { signal: AbortSignal.timeout(8000) })
+      if (!response.ok) return true
+      const value = await response.json()
+      return Array.isArray(value.Answer) && value.Answer.some((item) => item && item.type === 1
+        && /^\d+\.\d+\.\d+\.\d+$/.test(String(item.data || '')))
+    } catch { return true }
+  }
+
+  function watchPublicDns(port) {
+    if (publicDnsTimer !== undefined) return
+    publicDnsTimer = setInterval(async () => {
+      const host = String(publicBaseUrl || '').replace(/^https:\/\//, '').replace(/\/.*$/, '')
+      if (host === '') return
+      if (await publicDnsPresent(host)) return
+      console.log('wechat-chat: 公网域名解析缺失，重新发布 Funnel')
+      await applyFunnel(port)
+    }, 10 * 60 * 1000)
+    publicDnsTimer.unref?.()
+  }
+
   async function applyFunnel(port) {
     try {
       const status = JSON.parse(await runTailscale(['status', '--json'], 15_000))
@@ -1705,6 +1732,7 @@ export function startGateway(host, config = {}) {
           if (host !== '') publicBaseUrl = `https://${host}`
         } catch { /* 保留未设置，回退到局域网地址 */ }
       }
+      watchPublicDns(port)
     } catch (err) {
       funnelState.enabled = false
       funnelState.error = (err && err.message) || String(err)

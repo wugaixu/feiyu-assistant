@@ -9,9 +9,13 @@ from app.live_service import LiveStore, ROOT
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['pending', 'show', 'claim', 'finish', 'send-image','comment','comment-status'])
+    parser.add_argument('action', choices=['pending', 'show', 'claim', 'finish', 'read-text','send-image','comment','comment-status'])
     parser.add_argument('--id')
     parser.add_argument('--result-file', type=Path)
+    parser.add_argument('--parts-file',type=Path,help='UTF-8 JSON array of text/image/share reply parts')
+    parser.add_argument('--path',type=Path)
+    parser.add_argument('--offset',type=int,default=0)
+    parser.add_argument('--limit',type=int,default=8000)
     parser.add_argument('--image-file', type=Path)
     parser.add_argument('--comment-file',type=Path,help='UTF-8 JSON with text and visual evidence; never shell text')
     parser.add_argument('--video-id')
@@ -32,6 +36,11 @@ def main():
             from app.image_sender import enqueue
             print(enqueue(db,args.id,args.image_file))
             return
+        if args.action=='read-text':
+            from app import task_materials
+            if not args.path:parser.error('--path required')
+            catalog=task_materials.for_task(db,args.id)
+            print(json.dumps(task_materials.read_text(catalog['texts'],args.path,args.offset,args.limit),ensure_ascii=False));return
         if args.action in ('comment','comment-status'):
             from app import shared_comments
             if args.action=='comment-status':
@@ -59,24 +68,30 @@ def main():
                               'received_media':media,'status':row[3], 'result':row[4]}, ensure_ascii=False))
             return
         if args.action == 'claim':
-            with db:
-                changed = db.execute("UPDATE live_tasks SET status='processing' WHERE id=? AND status='pending' AND NOT EXISTS(SELECT 1 FROM live_tasks WHERE status='processing')", (args.id,)).rowcount
-                if not changed:
-                    raise ValueError('Task already claimed or unavailable')
-                if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='video_rounds'").fetchone():
-                    db.execute("UPDATE video_rounds SET status='processing' WHERE id=?",(args.id,))
+            from app.task_lifecycle import claim
+            claim(db,args.id)
             print('claimed')
             return
+        if args.parts_file:
+            from app.reply_batch import finish as finish_batch
+            parts=json.loads(args.parts_file.read_text(encoding='utf-8-sig'))
+            if not isinstance(parts,list) or any(p.get('type')=='audio' for p in parts):
+                raise ValueError('CLI replies support text/image/share; audio remains AstrBot-only')
+            from app.reply_parts import normalize
+            warnings=[];parts=normalize(parts,warnings.append)
+            finish_batch(db,args.id,parts,status=args.status)
+            for warning in warnings:print('warning: '+warning,file=sys.stderr)
+            print('reply_queued');return
         if not args.result_file:
             parser.error('--result-file required')
-        result = args.result_file.read_text(encoding='utf-8').strip()
+        result = args.result_file.read_text(encoding='utf-8-sig').strip()
         if not result:
             raise ValueError('Reply must not be empty')
         if args.status == 'done':
             # Same blank-line splitting and limits as the AstrBot path.
-            from app.reply_parts import finish_parts
+            from app.reply_parts import drop_process_narration, finish_parts
             warnings = []
-            parts = finish_parts(result, warnings.append)
+            parts = drop_process_narration(finish_parts(result, warnings.append))
             if not parts:
                 raise ValueError('Reply must contain visible text')
             from app.reply_batch import finish as finish_batch
@@ -87,15 +102,8 @@ def main():
             return
         if len(result) > 1500:
             raise ValueError('Reply must contain 1..1500 characters')
-        with db:
-            row = db.execute("SELECT owner FROM live_tasks WHERE id=? AND status='processing'", (args.id,)).fetchone()
-            if not row:
-                raise ValueError('Task is not processing')
-            db.execute('UPDATE live_tasks SET status=?,result=? WHERE id=?', (args.status,result,args.id))
-            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='video_rounds'").fetchone():
-                db.execute('UPDATE video_rounds SET status=? WHERE id=?',(args.status,args.id))
-            db.execute('INSERT INTO reply_outbox(id,task_id,owner,text) VALUES(?,?,?,?)',
-                       (args.id+':result',args.id,row[0],result))
+        from app.reply_batch import finish as finish_batch
+        finish_batch(db,args.id,[{'type':'text','text':result}],status=args.status)
         print('reply_queued')
     finally:
         db.close()

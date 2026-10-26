@@ -150,7 +150,7 @@ def ensure_children():
         from app.gpt_sovits import ensure as ensure_gpt_sovits
         if ensure_gpt_sovits(_spawn):started.append('gpt_sovits')
         from app.dsh_registry import ensure as ensure_dsh_registry
-        if (_read_json(TARGET_FILE,{}) or {}).get('provider')=='dsh' and ensure_dsh_registry().get('changed'):started.append('dsh_registry')
+        if ensure_dsh_registry().get('changed'):started.append('dsh_registry')
     except Exception:
         pass
     return started
@@ -537,7 +537,11 @@ def agent_sessions_state():
     from app import dsh_client
     try:
         items=dsh_client.sessions()
-        return {'online':True,'sessions':items,'error':None}
+        from app.workflow_protocol import VERSION
+        capabilities=dsh_client.capabilities()
+        ready=capabilities.get('protocol_version')==VERSION
+        return {'online':True,'sessions':items,'protocol_ready':ready,'capabilities':capabilities,
+                'error':None if ready else 'DSH连接器未加载统一协议版本'}
     except ConnectionError as exc:
         return {'online':False,'sessions':[],'error':str(exc)}
 
@@ -546,6 +550,8 @@ def astrbot_state():
     """AstrBot's own session/config list; secrets stay in the connector file."""
     from app import astrbot_client
     state=astrbot_client.state()
+    from app.workflow_protocol import astrbot_reader
+    state['material_reader']=astrbot_reader()
     from app.local_images import state as image_state
     state['local_image']=image_state()
     from app.voice_capabilities import state as voice_state

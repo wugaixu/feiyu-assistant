@@ -6,7 +6,8 @@ from app import whale_channel
 from app.resource_storage import resource_dir,media_output_allowed,LOCK
 
 MAX_BYTES=32*1024*1024
-IMAGE_EXT={'.jpg','.jpeg','.png','.gif','.webp','.bmp','.tif','.tiff'}
+from app.media_formats import INBOUND_EXTENSIONS
+IMAGE_EXT=INBOUND_EXTENSIONS
 VIDEO_EXT={'.mp4','.webm','.mov','.m4v','.mkv'}
 AUDIO_EXT={'.wav','.mp3','.m4a','.ogg','.flac','.aac'}
 
@@ -32,9 +33,9 @@ def receive(db,device,message_id,name,digest):
     if kind=='image' and len(raw)>10*1024*1024:raise ValueError('图片不能超过10MiB')
     if kind=='image':
         from PIL import Image
-        from app.media_formats import INBOUND_IMAGE,MAX_PIXELS
+        from app.media_formats import INBOUND_IMAGE,MAX_PIXELS,open_inbound
         try:
-            with Image.open(io.BytesIO(raw)) as image:
+            with open_inbound(raw) as image:
                 if image.format not in INBOUND_IMAGE or image.width*image.height>MAX_PIXELS:raise ValueError('Unsupported or oversized image')
                 image.verify()
         except (OSError,Image.DecompressionBombError) as exc:
@@ -120,8 +121,13 @@ def attachment(db,device,seq):
     mime='application/octet-stream'
     if row[3]=='image':
         from PIL import Image
-        with Image.open(io.BytesIO(raw)) as image:
+        from app.media_formats import open_inbound
+        with open_inbound(raw) as image:
             if image.width*image.height>50000000:raise ValueError('Image too large')
+            if image.format=='HEIF':
+                output=io.BytesIO();image.convert('RGB').save(output,format='PNG')
+                if output.tell()>MAX_BYTES:raise ValueError('Converted image exceeds byte limit')
+                return output.getvalue(),'image/png'
             mime={'PNG':'image/png','JPEG':'image/jpeg','GIF':'image/gif','WEBP':'image/webp','BMP':'image/bmp','TIFF':'image/tiff'}.get(image.format,mime)
             image.verify()
     return raw,mime

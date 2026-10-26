@@ -7,14 +7,14 @@ class MediaFormatContractTests(unittest.TestCase):
         for fmt in formats.OUTBOUND_IMAGE:
             self.assertIn(fmt, formats.INBOUND_IMAGE)
         self.assertEqual(set(formats.OUTBOUND_IMAGE), {'PNG', 'JPEG', 'GIF', 'WEBP'})
-        self.assertEqual(set(formats.INBOUND_IMAGE), {'PNG', 'JPEG', 'GIF', 'WEBP', 'BMP', 'TIFF'})
+        self.assertEqual(set(formats.INBOUND_IMAGE), {'PNG', 'JPEG', 'GIF', 'WEBP', 'BMP', 'TIFF', 'HEIF'})
 
     def test_storage_suffix_matches_outbound_extensions(self):
         for fmt, suffix in formats.SUFFIX.items():
             self.assertIn(suffix, formats.OUTBOUND_EXTENSIONS)
             self.assertEqual(formats.save_suffix(fmt), suffix)
             self.assertEqual(formats.outbound_suffix(fmt), suffix)
-        for fmt in ('BMP', 'TIFF'):
+        for fmt in ('BMP', 'TIFF', 'HEIF'):
             self.assertEqual(formats.save_suffix(fmt), '.png')
             self.assertFalse(formats.stored_as_is(fmt))
             self.assertEqual(formats.outbound_suffix(fmt), '')

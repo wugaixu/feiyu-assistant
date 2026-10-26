@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT=Path(r'__RUNTIME_ROOT__')
 # The binary occasionally needs longer than a minute for multi-image posts;
 # the outer adapter allows a little more than this worker's own budget.
-DOUK_TIMEOUT_SECONDS=120
+DOUK_TIMEOUT_SECONDS=180
 DOUK_HTTP_TIMEOUT_SECONDS=20
 
 
@@ -19,7 +19,7 @@ def collect_output(directory,before,video_id,expected_images=None):
     candidates=[p for p in directory.rglob('*') if p.is_file() and p.resolve() not in before]
     expected=expected_count(expected_images)
     videos=[p for p in candidates if p.suffix.lower()=='.mp4']
-    if any(not 0<p.stat().st_size<=64*1024*1024 for p in videos):raise ValueError('Video output exceeds byte limit or is empty')
+    if any(not 0<p.stat().st_size<=256*1024*1024 for p in videos):raise ValueError('Video output exceeds byte limit or is empty')
     def info(p):
         return {'status':'saved','path':str(p),'bytes':p.stat().st_size,
             'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'source':'douk_5.8'}
@@ -31,7 +31,7 @@ def collect_output(directory,before,video_id,expected_images=None):
         if len({(str(p.parent.resolve()),m[1]) for m,p in numbered})!=1:raise ValueError('Mixed live-photo works')
         numbered.sort(key=lambda item:int(item[0][2]))
         if [int(m[2]) for m,p in numbered]!=list(range(1,len(videos)+1)):raise ValueError('Incomplete live-photo sequence')
-        if sum(p.stat().st_size for p in videos)>64*1024*1024:raise ValueError('Live-photo collection exceeds byte limit')
+        if sum(p.stat().st_size for p in videos)>256*1024*1024:raise ValueError('Live-photo collection exceeds byte limit')
         return {'status':'saved','media_type':'live_photo_collection','files':[info(p) for m,p in numbered],
             'clip_count':len(videos),'video_id':video_id,'automatic_retry':False,'source':'douk_5.8',
             'completeness':'Locally downloaded numbered clips; original platform count not independently verified'}
@@ -86,7 +86,7 @@ def main():
     config=json.loads((source/'Volume/settings.json').read_text(encoding='utf-8-sig'))
     if not config.get('cookie'):raise ValueError('DouK login Cookie missing')
     config.update(root=str(directory),folder_name='douk',max_retry=0,timeout=DOUK_HTTP_TIMEOUT_SECONDS,
-                  max_size=64*1024*1024,run_command='',download=True)
+                  max_size=256*1024*1024,run_command='',download=True)
     (volume/'settings.json').write_text(json.dumps(config,ensure_ascii=False),encoding='utf-8')
     # No download history is copied: each media task has its own destination.
     before={p.resolve() for p in directory.rglob('*') if p.is_file()}

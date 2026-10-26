@@ -6,9 +6,10 @@
 
 ```powershell
 python deploy/doctor.py --runtime-dir D:\FeiyuData
-cd D:\FeiyuData\installed\0.1.0
+cd D:\FeiyuData\installed\0.2.0
 python -m unittest discover -q
 node --test test_whale_bridge.mjs test_whale_standalone.mjs test_whale_pairing.mjs test_whale_upload.mjs
+node --test dsh_bridge/test.mjs
 node test_console_ui.cjs
 node test_whale_audio_ui.cjs
 node test_whale_voice_order.cjs

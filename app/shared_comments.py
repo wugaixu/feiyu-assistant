@@ -56,10 +56,6 @@ def enqueue(db,task_id,video_id,review,*,after_reply=False):
         db.execute('BEGIN IMMEDIATE')
         row=db.execute("SELECT owner,raw_json,status FROM live_tasks WHERE id=?",(task_id,)).fetchone()
         task=row[:2] if row and row[2]=='processing' else None
-        if row and row[2]=='done' and after_reply:
-            queued=db.execute('SELECT 1 FROM reply_outbox WHERE task_id=? LIMIT 1',(task_id,)).fetchone()
-            processed=db.execute("SELECT 1 FROM chat_dispatch WHERE task_id=? AND status='processed' AND json_extract(detail,'$.provider')='astrbot'",(task_id,)).fetchone()
-            if queued and processed:task=row[:2]
         if not task or task[0]!=OWNER:raise ValueError('Claimed verified owner task required')
         candidates=db.execute('SELECT record_json FROM media_records WHERE owner=? AND (attached_to=? OR id=?)',(OWNER,task_id,task_id)).fetchall()
         record=next((json.loads(r[0]) for r in candidates if str((json.loads(r[0]).get('video') or {}).get('video_id'))==video_id),None)
@@ -75,8 +71,8 @@ def enqueue(db,task_id,video_id,review,*,after_reply=False):
         day=datetime.now(TZ).date().isoformat()
         if db.execute('SELECT count(*) FROM shared_comment_outbox WHERE day=?',(day,)).fetchone()[0]+manual_attempt_count(db,day)>=int(cfg.get('daily_limit',10)):
             raise ValueError('Daily shared-work comment quota reached')
-        db.execute('INSERT INTO shared_comment_outbox VALUES(?,?,?,?,?,?,?,NULL)',(video_id,task_id,text.strip(),evidence.strip(),time.time(),day,'pending'))
-    return {'status':'pending','video_id':video_id,'automatic_retry':False}
+        db.execute('INSERT INTO shared_comment_outbox VALUES(?,?,?,?,?,?,?,NULL)',(video_id,task_id,text.strip(),evidence.strip(),time.time(),day,'waiting_for_reply'))
+    return {'status':'waiting_for_reply','video_id':video_id,'automatic_retry':False}
 
 def verify_self(me):
     if not isinstance(me,dict) or me.get('status_code')!=0 or str(me.get('user_uid'))!=ACCOUNT_UID:
@@ -130,7 +126,7 @@ def _step(db,api=None,lease=None):
     schema(db);cfg=policy()
     if not cfg.get('enabled'):return None
     mention_owner=cfg.get('mention_owner',True) is not False
-    row=db.execute("SELECT video_id,task_id,text FROM shared_comment_outbox WHERE status='pending' ORDER BY created LIMIT 1").fetchone()
+    row=db.execute("SELECT video_id,task_id,text,detail FROM shared_comment_outbox WHERE status='pending' ORDER BY created LIMIT 1").fetchone()
     if not row:return None
     work_kind='video'
     try:

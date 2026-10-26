@@ -66,8 +66,10 @@ class SharedVideoTests(unittest.TestCase):
             dispatch_one(db,runner=runner,executable='codex.exe')
             self.assertIsNone(dispatch_one(db,runner=runner,executable='codex.exe'))
         self.assertEqual(runner.call_count,1)
-        self.assertEqual(db.execute('SELECT attached_to FROM media_records').fetchone()[0],'text')
-        self.assertEqual(db.execute("SELECT status FROM live_tasks WHERE id='video'").fetchone()[0],'resource_saved')
+        # The burst keeps the earliest task as the delivery and folds the text in.
+        self.assertEqual(db.execute('SELECT attached_to FROM media_records').fetchone()[0],'video')
+        self.assertEqual(db.execute("SELECT status FROM live_tasks WHERE id='text'").fetchone()[0],'merged')
+        self.assertEqual(db.execute("SELECT status FROM live_tasks WHERE id='video'").fetchone()[0],'pending')
 
     def test_stale_standalone_selection_cannot_send_attached_video(self):
         store=LiveStore(self.root/'stale.sqlite3');self.addCleanup(store.db.close);db=store.db

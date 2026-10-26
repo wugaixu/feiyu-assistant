@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 import bridge
 from app.live_service import LiveStore
+from app.sdk_receiver import OWNER
 
 
 class BridgeTests(unittest.TestCase):
@@ -19,7 +20,7 @@ class BridgeTests(unittest.TestCase):
             task_id = '1' * 32
             with store.db:
                 store.db.execute('INSERT INTO live_tasks(id,owner,received,raw_json) VALUES(?,?,?,?)',
-                                 (task_id, 'owner', 1, '{}'))
+                                 (task_id, OWNER, 1, '{}'))
             def run(*args):
                 with patch.object(bridge, 'ROOT', runtime), patch.object(sys, 'argv', ['bridge.py', *args]), contextlib.redirect_stdout(io.StringIO()):
                     bridge.main()

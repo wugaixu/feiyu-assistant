@@ -27,9 +27,11 @@ test('authenticated existing-session enqueue, persistent receipt and failure han
   try {
     assert.equal((await request('/sessions')).body.items.length,1);
     assert.deepEqual((await request('/capabilities')).body.sources,['douyin','whale']);
+    assert.equal((await request('/capabilities')).body.version,4);
     assert.equal((await request('/sessions',null,{Authorization:'Bearer wrong'})).status,403);
     assert.equal((await request('/sessions',null,{Origin:'http://evil.invalid'})).status,403);
     const body={session_id:SID,task_id:TID,message:'[抖音私信] 测试'};
+    assert.equal((await request('/prompt',{...body,images:[{path:'unused.png'}]})).status,400);
     assert.equal((await request('/prompt',body)).body.accepted,true);
     assert.equal((await request('/prompt',body)).body.accepted,true);assert.equal(calls,1);
     target.provider='codex';writeFileSync(join(root,'dispatch-target.json'),JSON.stringify(target));

@@ -174,7 +174,7 @@ class HistoryTests(unittest.TestCase):
         prompt = aw.dm_prompt({'kind': 'text', 'raw_text': '刚才那个视频呢'}, [], '主人：发了个视频\n你：看到了')
         self.assertIn('【本会话最近对话（主人=对方，助手=你自己）', prompt)
         self.assertIn('刚才那个视频呢', prompt)
-        self.assertLess(prompt.index('主人：发了个视频'), prompt.index('用户原话：刚才那个视频呢'))
+        self.assertLess(prompt.index('主人：发了个视频'), prompt.index('[抖音私信]'))
 
 
 class PromptContractTests(unittest.TestCase):
@@ -183,7 +183,8 @@ class PromptContractTests(unittest.TestCase):
         self.assertNotIn('[[分条]]', prompt)
         self.assertNotIn('[[图片:', prompt)
         self.assertIn('不要写本地文件路径', prompt)
-        self.assertIn('用户原话：你好', prompt)
+        self.assertIn('"text": "你好"', prompt)
+        self.assertIn('context_file',prompt)
         self.assertIn('不自行调用抖音发送', prompt)
         self.assertIn('抖音私聊', prompt)
         self.assertIn('不要使用 Markdown', prompt)
@@ -192,12 +193,13 @@ class PromptContractTests(unittest.TestCase):
         prompt = aw.dm_prompt({'kind': 'shared_media', 'original_kind': 'image',
                                'raw_text': '[用户分享的媒体] 请读取本地资料'}, [])
         self.assertNotIn('请读取本地资料', prompt)
-        self.assertIn('主人只分享了素材', prompt)
+        self.assertIn('[分享图片或表情]', prompt)
 
-    def test_comment_prompt_is_json_only_and_has_no_multi_message_marker(self):
-        prompt = aw.comment_prompt({'video': {'video_id': '1', 'description': 'x'}})
-        self.assertIn('只输出一个JSON对象', prompt)
-        self.assertNotIn('[[分条]]', prompt)
+    def test_comment_draft_is_in_the_shared_main_session_contract(self):
+        from app.task_context import READING_RULES
+        self.assertIn('workflow_comment',READING_RULES)
+        self.assertIn('提交前自行审查',READING_RULES)
+        self.assertIn('不另开评论模型会话',READING_RULES)
 
 
 class ChatRequestTests(unittest.TestCase):
@@ -352,6 +354,7 @@ class AstrbotDispatchTests(unittest.TestCase):
         self.patches = [patch.object(ed, 'target_config', return_value=self.config),
                         patch('app.astrbot_client.state', return_value=READY),
                         patch.object(aw, 'busy', return_value=False),
+                        patch('app.workflow_protocol.astrbot_reader',return_value={'ready':True}),
                         patch.object(ed, 'envelope', return_value='[抖音私信] test')]
         for p in self.patches:
             p.start()

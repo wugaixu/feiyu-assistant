@@ -66,7 +66,10 @@ class SharedCommentTests(unittest.TestCase):
         self.db.execute('INSERT OR REPLACE INTO media_records VALUES(?,?,?,?,?,?)',('media',c.OWNER,time.time(),'video_card',json.dumps(self.record),'task'));self.db.commit()
 
     def queue(self,text='这个反差挺有意思。'):
-        return c.enqueue(self.db,'task',VIDEO,{'text':text,'evidence':'contact-sheet.jpg：画面中有反差情节。'})
+        result=c.enqueue(self.db,'task',VIDEO,{'text':text,'evidence':'contact-sheet.jpg：画面中有反差情节。'})
+        from app.reply_batch import finish
+        finish(self.db,'task',[{'type':'text','text':'私信回复'}])
+        return {**result,'status':self.db.execute('SELECT status FROM shared_comment_outbox').fetchone()[0]}
 
     def test_queue_and_publish_readback_once(self):
         self.queue();api=FakeBrowser();result=c.step(self.db,api)
@@ -215,14 +218,12 @@ class SharedCommentTests(unittest.TestCase):
         self.assertFalse(bp.page_on_target('https://www.douyin.com/','123'))
 
 
-    def test_completed_reply_comment_requires_committed_astrbot_provenance(self):
+    def test_completed_reply_cannot_create_new_draft_even_for_astrbot(self):
         self.db.execute("UPDATE live_tasks SET status='done' WHERE id='task'");self.db.commit()
         with self.assertRaises(ValueError):self.queue()
         self.db.execute('CREATE TABLE chat_dispatch(task_id TEXT,status TEXT,detail TEXT)')
         self.db.execute("INSERT INTO reply_outbox(id,task_id,owner,text) VALUES('reply','task',?,'回复')",(c.OWNER,))
         self.db.execute('INSERT INTO chat_dispatch VALUES(?,?,?)',('task','processed',json.dumps({'provider':'astrbot'})));self.db.commit()
-        result=c.enqueue(self.db,'task',VIDEO,{'text':'这个反差挺有意思。','evidence':'contact-sheet.jpg：真实画面依据'},after_reply=True)
-        self.assertEqual(result['status'],'pending')
         with self.assertRaises(ValueError):c.enqueue(self.db,'task',VIDEO,{'text':'不重复','evidence':'真实画面依据路径'},after_reply=True)
 
 if __name__=='__main__':unittest.main()

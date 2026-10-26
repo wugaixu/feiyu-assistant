@@ -61,6 +61,9 @@ def prompt(session_id,task_id,message):
     try:
         row=db.execute('''SELECT t.owner,t.status,d.status,d.detail FROM live_tasks t
             JOIN chat_dispatch d ON d.task_id=t.id WHERE t.id=?''',(task_id,)).fetchone()
+        records=[]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='media_records'").fetchone():
+            records=[json.loads(r[0]) for r in db.execute('SELECT record_json FROM media_records WHERE id=? OR attached_to=?',(task_id,task_id))]
     finally:db.close()
     from app.sdk_receiver import OWNER
     if not row or row[0]!=OWNER or row[1]!='pending' or row[2]!='attempted':
@@ -68,7 +71,8 @@ def prompt(session_id,task_id,message):
     snapshot=json.loads(row[3] or '{}')
     if snapshot.get('provider')!='dsh' or snapshot.get('session_id')!=session_id:
         raise ValueError('DSH投递目的地与预留记录不一致')
-    result=request('/prompt',{'session_id':session_id,'task_id':task_id,'message':message})
+    body={'session_id':session_id,'task_id':task_id,'message':message}
+    result=request('/prompt',body)
     if result.get('accepted') is not True or result.get('request_id')!='douyin-'+task_id:
         raise ConnectionError('DSH未确认接受消息；不自动重试')
     return result['request_id']

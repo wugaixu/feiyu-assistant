@@ -8,7 +8,7 @@ export const name = 'douyin-local-session-bridge';
 export const inject = ['sessionController','agentPresets'];
 const ROOT = String.raw`__RUNTIME_ROOT__`;
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
-export const capabilities = Object.freeze({version:2,sources:['douyin','whale'],mode:'queue',creates_agent:false});
+export const capabilities = Object.freeze({version:4,protocol_version:4,sources:['douyin','whale'],mode:'queue',creates_agent:false,native_images:false,materials:'shared_local_paths'});
 export const validEnvelope = message => typeof message==='string' && message.length<=30000 &&
   ['[抖音私信]','[鲸聊私信]','[抖音选片任务]'].some(prefix=>message.startsWith(prefix));
 function read(path) {return JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));}
@@ -54,6 +54,7 @@ export function createHandler(controller, root=ROOT, presets=null) {
       if (target.provider!=='dsh' || target.dsh?.session_id!==body.session_id) return send(409,{error:'destination_changed'});
       const items=await listSessions();
       if (!items.some(x=>x.id===body.session_id && x.available!==false)) return send(409,{error:'session_unavailable'});
+      if(body.images)return send(400,{error:'invalid_request'});
       const dir=join(root,'dsh-dispatch-receipts');mkdirSync(dir,{recursive:true});
       const path=join(dir,body.task_id+'.json');
       // Exclusive persistent reservation survives connector/host reloads.
@@ -64,7 +65,8 @@ export function createHandler(controller, root=ROOT, presets=null) {
       }
       const receipt={task_id:body.task_id,session_id:body.session_id,request_id:'douyin-'+body.task_id,status:'attempted',at:Date.now()};
       writeFileSync(path,JSON.stringify(receipt),{flag:'wx',mode:0o600});
-      const result=await controller.prompt({requestId:receipt.request_id,sessionId:body.session_id,mode:'queue',content:[{type:'text',text:body.message}],clientTimeZone:'Asia/Shanghai'},AbortSignal.timeout(25000));
+      const request={requestId:receipt.request_id,sessionId:body.session_id,mode:'queue',content:[{type:'text',text:body.message}],clientTimeZone:'Asia/Shanghai'};
+      const result=await controller.prompt(request,AbortSignal.timeout(25000));receipt.visual_mode='shared_local_paths';
       if(result.accepted!==true)throw new Error('Prompt acknowledgement missing');
       receipt.status='accepted';writeFileSync(path+'.tmp',JSON.stringify(receipt));renameSync(path+'.tmp',path);
       return send(200,{accepted:true,request_id:receipt.request_id});

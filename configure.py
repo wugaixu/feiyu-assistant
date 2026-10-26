@@ -1,7 +1,7 @@
 """Compile a relocatable deployment from this clean source snapshot; never start services."""
 import argparse,json,os,re,secrets,shutil,sys
 from pathlib import Path
-VERSION='0.1.0'
+VERSION='0.2.0'
 REPO=Path(__file__).resolve().parent
 
 def safe_path(value):
@@ -37,7 +37,8 @@ def configure(cfg):
             dest.write_text(text,encoding='utf-8')
         except UnicodeDecodeError:shutil.copy2(source,dest)
     defaults={
-      'inbound-policy.json':{'standalone':True,'enabled':True},
+      'inbound-policy.json':{'standalone':True,'enabled':True,'transport':'sdk'},
+      'reply-policy.json':{'drop_process_narration':False},
       'dm-policy.json':{'enabled':True,'min_send_gap_seconds':1},
       'shared-comment-policy.json':{'enabled':False,'daily_limit':10,'mention_owner':False},
       'video-round-config.json':{'enabled':False,'auto_comment':False},

@@ -54,7 +54,7 @@ def download(page,identity,directory,work=None,backend=None):
                      'expected_images':identity.get('expected_images')}
             result=subprocess.run([sys.executable,'-B','-X','utf8',str(Path(__file__).with_name('douk_downloader_worker.py'))],
                 cwd=str(ROOT),input=json.dumps(request),
-                capture_output=True,text=True,encoding='utf-8',timeout=130,
+                capture_output=True,text=True,encoding='utf-8',timeout=190,
                 creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             value=json.loads(result.stdout)
             verify_douk_output(value,directory)

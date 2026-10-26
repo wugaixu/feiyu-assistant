@@ -646,7 +646,7 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
   }
   function chooseFiles(event){
     Array.from(event.target.files||[]).forEach(function(file){
-      var image=/\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(file.name),limit=(image?10:32)*1048576;
+      var image=/\.(png|jpe?g|gif|webp|bmp|tiff?|heic|heif)$/i.test(file.name),limit=(image?10:32)*1048576;
       if(!file.size||file.size>limit){toastText(file.name+'：文件为空或超过'+(image?10:32)+'MiB');return;}
       if(uploadItems.length>=6){toastText('每次最多选择6个文件');return;}
       uploadItems.push({id:nextUploadId(),file:file});

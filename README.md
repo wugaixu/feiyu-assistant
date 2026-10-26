@@ -2,7 +2,9 @@
 
 把抖音私信和自制 Android「鲸聊」接入同一套本地 AI 工作流：收信、文件下载、看图、视频采样与音频转写、交给指定智能体处理，再回到原来的通道和设备。提供 Windows 管理台、手机管理入口、语音和本地生图适配。
 
-**版本：v0.1.0（2026-10-26 源码快照）；Android：1.5.2。**
+**版本：v0.2.0（2026-10-26 源码快照）；Android：1.5.2。**
+
+本版同步三主体统一协议4、按来源连续15秒静默合并消息、AstrBot本地素材阅读工具、主会话评论草稿与私信完成联动、HEIC/HEIF解码和256MB视频/实况原片支持。完整变更见 [发布说明](RELEASE_NOTES.md)。
 
 这是一套从实际使用环境整理的 Windows 部署方案，不是抖音官方 SDK，也不是开箱即用的托管服务。发布版提供可配置源码、安装辅助脚本、Android 完整源码与 APK；不包含他人的模型 API 额度、账号登录、聊天数据或数十 GB 模型。先跑通基本收发，再启用可选模块。
 
@@ -53,7 +55,7 @@ flowchart LR
 
 1. 阅读 [部署教程](docs/DEPLOYMENT.md)，安装 Windows、Python、Node.js 和所选 AI 客户端。
 2. 复制 `deployment.example.json` 为 **不提交 Git 的** `deployment.local.json`，填自己的主人 UID、小号 UID、主人 sec_uid 路径、运行目录和 Codex 工作区。
-3. 执行 `python configure.py`。它把模板编译为运行目录下的 `installed/0.1.0`，不启动服务，不替换本机已有工作流。
+3. 执行 `python configure.py`。它把模板编译为运行目录下的 `installed/0.2.0`，不启动服务，不替换本机已有工作流。
 4. 安装核心 Python 依赖和 SDK；配置至少一个 AI 主体；再启动生成目录内的 `管理界面.vbs`。
 5. 按 [人工配置清单](docs/CREDENTIALS_AND_LOGINS.md) 完成模型 Key、扫码登录、Cookie 或手机配对。
 6. 逐项做 [验收与排错](docs/TESTING.md)，再启用公开评论、自主活动等外发功能。

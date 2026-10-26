@@ -21,7 +21,7 @@ D:\FeiyuData\core-venv\Scripts\python.exe configure.py
 D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_components.py --runtime-dir D:\FeiyuData --component sdk
 ```
 
-`configure.py` 只在新的 `<runtime>/installed/0.1.0` 生成运行代码和缺失的初始配置，不启动程序、不迁移历史、不覆盖旧目录。源码保留模板，实际运行生成目录；以后升级先备份并按新版本迁移，不反复强制覆盖代码/配置。
+`configure.py` 只在新的 `<runtime>/installed/0.2.0` 生成运行代码和缺失的初始配置，不启动程序、不迁移历史、不覆盖旧目录。源码保留模板，实际运行生成目录；以后升级先备份并按新版本迁移，不反复强制覆盖代码/配置。
 
 核心 SDK 使用 npm `douyin-im@1.1.0`；原验证源码提交为 `f6eee669c39094224e00c6b877e1964d9da4e393`。发布版统一从 `<runtime>/node_modules/douyin-im/lib/index.js` 加载，不依赖作者研究目录。
 
@@ -46,6 +46,14 @@ D:\FeiyuData\core-venv\Scripts\python.exe deploy/connect_astrbot.py --runtime-di
 
 该Key用于本机连接器，不是模型服务商Key。脚本会调用只读 `/chat/configs` 验证，不打印Key。随后在管理台“会话投递→AstrBot”创建/选择专用会话和人设配置，点击应用。不要直接拿AstrBot浏览器随便开的会话代替本连接器登记的专用会话。
 
+选择AstrBot前必须安装统一素材阅读插件（无需先部署生图或语音）：
+
+```powershell
+D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_plugins.py --runtime-dir D:\FeiyuData --reader-only
+```
+
+在AstrBot启用 `workflow_local_vision` 2.0.0，正常重载或重启后确认 `workflow_read_text`、`workflow_read_image`、`workflow_comment` 已注册，管理台协议状态为4。它按资料包路径读取实际图片/文本并登记评论草稿，不自动把原图发回用户。已有同名插件时脚本拒绝覆盖；升级先备份，再仅替换生成目录对应的插件代码。
+
 ### Codex
 
 安装并登录本机Codex桌面，在 `codex_workspace` 指定的目录创建可读文件和执行 bridge 的会话；管理台仅列这个工作区的非归档会话。选择并应用。桌面内部数据库/CLI会变化，当前适配 `state_5.sqlite` 和已有 `codex queue` 契约，升级后先验证；不使用云端服务器替本地读取文件。
@@ -57,20 +65,20 @@ D:\FeiyuData\core-venv\Scripts\python.exe deploy/connect_astrbot.py --runtime-di
 ```yaml
 - insert:
     - id: douyin-local-session-bridge
-      name: "file:///D:/FeiyuData/installed/0.1.0/dsh_bridge/index.mjs"
+      name: "file:///D:/FeiyuData/installed/0.2.0/dsh_bridge/index.mjs"
 ```
 
 先备份原文件，不覆盖其他插件；在DSH正常重载或重启后确认8794在线。管理台选DSH时会检查并修复丢失的注册行，保留原条目。接口以DSH0.2.1-rc系列的SessionController为基线，更新后须确认。DSH消息须按生成目录AGENTS说明读取资料并执行bridge完成任务。
 
 ## 3. 启动、扫码与手机连接
 
-从 `<runtime>/installed/0.1.0/管理界面.vbs` 启动；它隐藏控制台，管理台保活SDK、receiver和已启用的鲸聊。页面关闭只是保留到托盘，退出用托盘“关闭程序”。不添加开机自启或Codex定时任务。
+从 `<runtime>/installed/0.2.0/管理界面.vbs` 启动；它隐藏控制台，管理台保活SDK、receiver和已启用的鲸聊。页面关闭只是保留到托盘，退出用托盘“关闭程序”。不添加开机自启或Codex定时任务。
 
 SDK首次产生 `<runtime>/sdk-login.png`，用**助手小号**扫码；平台验证由自己完成。管理台检查实际小号UID，不能拿SDK在线代替主站评论登录或DouK Cookie。
 
 鲸聊初始为本机、网络禁用模式。远程手机：安装并登录Tailscale，按其官方条件启用Funnel；在 `<runtime>/whale-channel.json` 把 `network.mode` 改为 `tailscale_funnel`，如果设置 `public_base_url` 必须是自己的HTTPS `.ts.net` 根地址。先设置网关访问密码，按管理台“打开鲸聊配对面板”提示操作；再正常重启管理台。入口只暴露鲸聊及受限管理代理，不手动转发8791/8793/9880等后端端口。
 
-安装Release中的 `肥鱼助手-1.5.2.apk`，扫码配对，必要时先输入访问密码。配对成功自动登记设备。手机可选择头像、发文字/录音，点＋选图片或文件；图片10MiB、其他32MiB、每批6个。无新设备授权时不能读取其他设备附件。手机管理默认关闭，在电脑管理台显式开启。
+安装Release中的 `feiyu-assistant-android-1.5.2.apk`，扫码配对，必要时先输入访问密码。配对成功自动登记设备。手机可选择头像、发文字/录音，点＋选图片或文件；图片10MiB、其他32MiB、每批6个。无新设备授权时不能读取其他设备附件。手机管理默认关闭，在电脑管理台显式开启。
 
 已收到私聊后回复固定回原设备，管理台“主动消息通道”只用于自主联系/作品分享，不会把当前聊天的答复改发给别人。
 
@@ -84,6 +92,8 @@ D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_components.py --runtime
 
 从[DouK官方项目](https://github.com/JoeanAmier/TikTokDownloader)取得Windows5.8版本，解压到 `<runtime>/tools/douk-5.8`，确保该目录直接有 `DouK-Downloader.exe` 和 `Volume/`。人工运行DouK，完成自己的Cookie导入/登录与一次正常下载，产生 `Volume/settings.json` 和 `DouK-Downloader.db`。
 
+视频/实况文件上限256MB，图集总计64MB，DouK进程超时180秒、外层190秒；保留原片，不自动压缩。
+
 工作线程会从这份配置建立 `tools/douk-service-5.8` 专用副本，不使用主界面的下载历史代替任务记录。图集按实际数量、实况按分段校验；超时保留有效落盘文件并标记partial，不能假装所有作品都成功。普通手机上传的视频不需要DouK，也不自动发布作品评论。
 
 ## 5. 发语音（可选）
@@ -94,11 +104,13 @@ D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_components.py --runtime
 D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_plugins.py --runtime-dir D:\FeiyuData --with-gpt-sovits
 ```
 
-脚本复制的是配置后路径的本项目生图插件和修改版 GPT-SoVITS 插件。已有同名目录会拒绝覆盖；不自动重启、不恢复已废弃的Windows系统女声插件。配置音色参数和工具后正常重启AstrBot验证。合成原文与真实音频一起进入鲸聊语音历史，可展开查看文字；没有原文的旧音频不猜。
+脚本复制的是配置后路径的统一素材阅读插件、本项目生图插件和修改版 GPT-SoVITS 插件。已有同名目录会拒绝覆盖；不自动重启、不恢复已废弃的Windows系统女声插件。配置音色参数和工具后正常重启AstrBot验证。合成原文与真实音频一起进入鲸聊语音历史，可展开查看文字；没有原文的旧音频不猜。
 
 ## 6. 生图、评论与自主活动（可选）
 
 本地生图先独立安装ComfyUI和相应模型，确认其API可以实际出图，再启用 `local-image.json` 和 `douyin_local_image` 插件。人设不应伪造“图发了”；真文件通过队列外发。手动生图不需要聊天模型，入口为生成目录 `本地生图.vbs`。
+
+评论草稿由当前主会话顺手生成并自查不含私人资料，无需单独评论会话；只有私信成功完成后才允许发布。
 
 评论：安装Edge/Playwright依赖；管理台→评论→登录检查，在独立profile登录与SDK相同小号，然后手动开启公开评论和可选@。主站账号校验、提及候选、提交及回读走真实网页，和私信SDK无关。平台验证时需自己接管；不要通过无限重试绕过。
 

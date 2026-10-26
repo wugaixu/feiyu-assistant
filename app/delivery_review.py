@@ -11,6 +11,8 @@ def automatic(items,kind='reply'):
     """Estimate channel state from newest evidence, not historical alert count."""
     if not items:return {'state':'idle','detail':'通道待机，等待新的发送记录','metric':'自动检查已启用'}
     item=items[0];status=item.get('status');reviews=item.get('review',{})
+    if kind=='comment' and status in ('waiting_for_reply','cancelled'):
+        return {'state':'idle','detail':'草稿等待私信完成后再发布' if status=='waiting_for_reply' else '任务未正常完成，草稿未发布；不会自动补发','metric':'评论草稿'}
     field='receipt' if kind=='reply' else 'visibility'
     observation=reviews.get(field,{}).get('value')
     if observation=='confirmed':

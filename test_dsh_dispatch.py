@@ -18,7 +18,7 @@ class DshDispatchTests(unittest.TestCase):
         self.store=LiveStore(':memory:');self.db=self.store.db
         self.db.execute('INSERT INTO live_tasks(id,owner,received,raw_json) VALUES(?,?,?,?)',(TID,'owner',1,'{"kind":"text","raw_text":"你好"}'));self.db.commit()
         self.config={'provider':'dsh','dsh':{'session_id':SID}}
-        self.patches=[patch.object(ed,'target_config',return_value=self.config),patch.object(dsh_client,'sessions',return_value=[{'id':SID}]),patch.object(ed,'envelope',return_value='[抖音私信] test')]
+        self.patches=[patch.object(ed,'target_config',return_value=self.config),patch.object(dsh_client,'sessions',return_value=[{'id':SID}]),patch.object(dsh_client,'capabilities',return_value={'protocol_version':4}),patch.object(ed,'envelope',return_value='[抖音私信] test')]
         for p in self.patches:p.start()
 
     def tearDown(self):
@@ -30,7 +30,7 @@ class DshDispatchTests(unittest.TestCase):
             self.assertEqual(ed.dispatch_one(self.db)['status'],'queued')
             self.assertIsNone(ed.dispatch_one(self.db))
         prompt.assert_called_once();args=prompt.call_args.args
-        self.assertEqual(args[:2],(SID,TID));self.assertIn('AGENTS.md',args[2])
+        self.assertEqual(args[:2],(SID,TID));self.assertEqual(args[2],'[抖音私信] test')
         detail=json.loads(self.db.execute('SELECT detail FROM chat_dispatch').fetchone()[0])
         self.assertEqual(detail,{'provider':'dsh','session_id':SID})
 
@@ -41,6 +41,11 @@ class DshDispatchTests(unittest.TestCase):
 
     def test_missing_session_not_reserved(self):
         with patch.object(dsh_client,'sessions',return_value=[]):
+            with self.assertRaises(ValueError):ed.dispatch_one(self.db)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM chat_dispatch').fetchone()[0],0)
+
+    def test_old_protocol_keeps_task_unreserved(self):
+        with patch.object(dsh_client,'capabilities',return_value={'version':2}):
             with self.assertRaises(ValueError):ed.dispatch_one(self.db)
         self.assertEqual(self.db.execute('SELECT count(*) FROM chat_dispatch').fetchone()[0],0)
 

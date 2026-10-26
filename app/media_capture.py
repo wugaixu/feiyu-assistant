@@ -57,7 +57,7 @@ def resource_bytes(page, url):
 
 def save_image(data, directory, name):
     from app import media_formats as formats
-    with Image.open(io.BytesIO(data)) as img:
+    with formats.open_inbound(data) as img:
         if img.width * img.height > formats.MAX_PIXELS:
             raise ValueError('Image exceeds 50 megapixels')
         fmt, size = img.format, list(img.size)
@@ -72,7 +72,7 @@ def save_image(data, directory, name):
         path.write_bytes(data)
     else:
         # BMP/TIFF land as PNG so stored media matches what can be sent back.
-        with Image.open(io.BytesIO(data)) as img:
+        with formats.open_inbound(data) as img:
             img.convert('RGB').save(path, 'PNG')
     raw = path.read_bytes()
     return {'path':str(path), 'status':'saved', 'bytes':len(raw), 'sha256':hashlib.sha256(raw).hexdigest(),

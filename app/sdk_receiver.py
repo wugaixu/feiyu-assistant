@@ -100,6 +100,8 @@ def main():
     lock=(ROOT/'sdk-receiver.lock').open('a+b');lock.write(b'0');lock.flush();lock.seek(0)
     msvcrt.locking(lock.fileno(),msvcrt.LK_NBLCK,1)
     store=LiveStore(ROOT/'assistant.sqlite3')
+    from app.task_lifecycle import reconcile_completed
+    reconcile_completed(store.db)
     from concurrent.futures import ThreadPoolExecutor
     pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='local-media');job=None
     while True:
