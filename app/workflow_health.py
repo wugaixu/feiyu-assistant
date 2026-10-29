@@ -29,12 +29,24 @@ def snapshot(path):
             for status,created,video_id,raw in db.execute('SELECT status,created,video_id,detail FROM shared_comment_outbox ORDER BY created DESC LIMIT 30'):
                 try:detail=json.loads(raw or '{}')
                 except ValueError:detail={}
+                if not isinstance(detail,dict):detail={}
                 result['comments'].append({'status':status,'created':created,'video_id':video_id,'error_class':detail.get('error_class'),'diagnostic':detail.get('diagnostic',{})})
         if 'reply_outbox' in tables:
             result['reply_counts']=dict(db.execute('SELECT status,count(*) FROM reply_outbox GROUP BY status'))
             result['reply_pending']=result['reply_counts'].get('pending',0)
             result['reply_attempted']=result['reply_counts'].get('attempted',0)
             result['reply_uncertain']=result['reply_counts'].get('outcome_uncertain',0)
+        # Route through the same immutable address resolver as the sender.
+        from app.channels import address
+        result['reply_routes']={}
+        for task_id,count in db.execute("SELECT task_id,count(*) FROM reply_outbox WHERE status='pending' GROUP BY task_id") if 'reply_outbox' in tables else ():
+            try:channel=address(db,task_id)['channel']
+            except (ValueError,TypeError,sqlite3.Error):channel='unknown'
+            result['reply_routes'][channel]=result['reply_routes'].get(channel,0)+count
+        result['active_channel']='douyin'
+        if 'channel_current' in tables:
+            active=db.execute('SELECT channel FROM channel_current WHERE id=1').fetchone()
+            if active:result['active_channel']=active[0]
         result['ok']=True
     except sqlite3.Error:result['ok']=False
     finally:db.close()
@@ -50,7 +62,8 @@ def assess(workflow,target,policies,data,dependencies,agent,storage,now=None):
     modules=[]
     def add(key,title,state,detail,metric='',tab='tasks'):
         modules.append({'id':key,'title':title,'state':state,'label':LABELS[state],'detail':detail,'metric':metric,'tab':tab,'checked_at':now})
-    sdk_ok=sdk.get('online') is True and str(sdk.get('uid'))=='__ACCOUNT_UID__'
+    from app.sdk_receiver import ACCOUNT_UID
+    sdk_ok=sdk.get('online') is True and str(sdk.get('uid'))==ACCOUNT_UID
     add('sdk','抖音聊天连接','ready' if sdk_ok else 'error',
         '当前 SDK 账号在线，身份匹配' if sdk_ok else ('连接离线、需要登录或账号身份不匹配'),str(sdk.get('nickname') or '未取得账号状态'),'overview')
     if not fresh:add('inbox','私信接收与入库','error','接收器状态缺失或已过期，不能据旧记录认定在线',f'状态距今 {age if age is not None else "未知"} 秒')
@@ -86,9 +99,15 @@ def assess(workflow,target,policies,data,dependencies,agent,storage,now=None):
     elif agent.get('running'):add('agent','会话投递与分析','busy','目标会话正在运行；当前没有本项目已领取任务',f'{provider_label} 会话活跃','sessions')
     elif pending:add('agent','会话投递与分析','busy' if receiving else 'blocked','等待媒体准备完成或下一轮投递',f'未投递 {pending} 条','tasks')
     else:add('agent','会话投递与分析','idle',f'已连接：{agent.get("title") or "指定会话"}',provider_label,'sessions')
-    dm=policies.get('dm') or {};outbound=workflow.get('outbound_alerts',0)
+    dm=policies.get('dm') or {}
+    routes=data.get('reply_routes') or {data.get('active_channel','douyin'):0}
+    ready={'douyin':sdk_ok,**workflow.get('channel_ready',{})}
+    missing=[key for key in routes if ready.get(key) is not True]
+    names={'douyin':'抖音','qq':'QQ','whale':'鲸聊','unknown':'未知来源'}
+    unavailable='、'.join(names.get(key,key) for key in missing)
+    route_metric=' · '.join(f'{names.get(key,key)} {count}' for key,count in routes.items())
     if dm.get('enabled',True) is not True:add('reply','私信回复发送','off','发送开关已关闭','可在设置中启用','settings')
-    elif not sdk_ok:add('reply','私信回复发送','blocked','SDK未就绪，待发送记录会保留',f'排队 {data.get("reply_pending",0)} 条')
+    elif missing:add('reply','私信回复发送','blocked' if len(missing)==len(routes) else 'warn',f'{unavailable}通道未就绪；其他通道独立运行，待发送记录保留',route_metric)
     elif data.get('reply_attempted') or data.get('reply_uncertain'):
         add('reply','私信回复发送','warn','存在未确认发送，不自动重发；后续分段可在前段结束尝试后继续',f"处理中 {data.get('reply_attempted',0)} · 结果不明 {data.get('reply_uncertain',0)} · 排队 {data.get('reply_pending',0)}")
     elif data.get('reply_pending'):add('reply','私信回复发送','busy','按照现有间隔逐条发送',f'排队 {data["reply_pending"]} 条')
@@ -97,7 +116,7 @@ def assess(workflow,target,policies,data,dependencies,agent,storage,now=None):
     else:add('reply','私信回复发送','idle','发送通道就绪；平台回执不等于接收端已收到',f'最小间隔 {dm.get("min_send_gap_seconds",1)} 秒')
     comments=data.get('comments',[]);active=sum(x['status'] in ('waiting_for_reply','pending','attempted') for x in comments)
     overdue=sum(x['status'] in ('pending','attempted') and now-x.get('created',now)>600 for x in comments)
-    if not (policies.get('shared_comment') or {}).get('enabled'):add('comment','作品评论与主人提及','off','公开评论开关已关闭','自动刷视频仍暂停','settings')
+    if not (policies.get('shared_comment') or {}).get('enabled'):add('comment','作品评论与主人提及','off','公开评论开关已关闭','不影响私信和作品分享','settings')
     elif (policies.get('shared_comment') or {}).get('_warnings'):add('comment','作品评论与主人提及','warn','评论设置含无效额度，已使用默认值；请在设置中修正','配置待修正','settings')
     elif overdue:add('comment','作品评论与主人提及','warn','发布队列超过10分钟未结束，请查看记录；本页不重试发布',f'{overdue} 条较久未完成','comments')
     elif active:add('comment','作品评论与主人提及','busy' if receiving else 'blocked','按需启动发布流程，空闲时没有浏览器进程是正常的',f'排队或处理 {active} 条','comments')
@@ -163,7 +182,21 @@ def collect(workflow,target,policies,outbound,root,db_path):
     try:storage['last_cleanup']=json.loads((root/'resource-cleanup-state.json').read_text(encoding='utf-8'))
     except (OSError,ValueError):pass
     from app.delivery_review import automatic
-    workflow={**workflow,'reply_assessment':automatic(outbound.get('items',[]))}
+    # Probe each required transport once, never send a diagnostic message.
+    needed=set(data.get('reply_routes') or {data.get('active_channel','douyin'):0})
+    channel_ready={}
+    if 'qq' in needed:
+        from app import qq_channel
+        config=qq_channel.settings()
+        health=qq_channel.health() if config.get('enabled') else {}
+        channel_ready['qq']=bool(config.get('enabled') and health.get('online') and health.get('bound'))
+    if 'whale' in needed:
+        from app import whale_channel
+        config=whale_channel.settings()
+        channel_ready['whale']=bool(config.get('enabled') and config.get('devices'))
+        if config.get('standalone'):
+            channel_ready['whale']=channel_ready['whale'] and whale_channel.gateway_health().get('ok') is True
+    workflow={**workflow,'channel_ready':channel_ready,'reply_assessment':automatic(outbound.get('items',[]))}
     modules=assess(workflow,target,policies,data,dependencies,agent,storage)
     return {'modules':modules,'checked_at':time.time(),'database_readable':data['ok'],
         'note':'就绪表示连接或组件检查通过；待机是正常按需状态，不代表已验证每条任务内容或消息送达。'}

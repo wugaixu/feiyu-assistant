@@ -25,7 +25,12 @@ def permit(db,task_id,session_id):
     row=db.execute('SELECT owner,status,raw_json FROM live_tasks WHERE id=?',(task_id,)).fetchone()
     if not row or row[0]!=OWNER or row[1]!='processing':raise ValueError('Claimed owner turn required')
     raw=json.loads(row[2])
-    if raw.get('transport')!='whale' or raw.get('direction')!='incoming':return ''
+    if raw.get('transport') not in ('whale','qq'):return ''
+    if raw.get('direction')!='incoming':
+        from app.diary_proactive import target
+        if raw.get('origin')!='diary_proactive' or not db.execute("SELECT 1 FROM sqlite_master WHERE name='diary_proactive_jobs'").fetchone():return ''
+        job=db.execute("SELECT destination,expires,status FROM diary_proactive_jobs WHERE id=?",(task_id,)).fetchone()
+        if not job or job[2]!='generating' or job[1]<=time.time() or json.loads(job[0])!=target() or json.loads(job[0]).get('session_id')!=session_id:return ''
     schema(db)
     with db:db.execute('INSERT OR IGNORE INTO whale_voice_permits(token,task_id,session_id,expires) VALUES(?,?,?,?)',(secrets.token_hex(24),task_id,session_id,time.time()+600))
     return db.execute('SELECT token FROM whale_voice_permits WHERE task_id=?',(task_id,)).fetchone()[0]
@@ -44,7 +49,7 @@ def synthesize(db,token,text):
         db.execute('BEGIN IMMEDIATE')
         row=db.execute('''SELECT p.task_id FROM whale_voice_permits p JOIN live_tasks t ON t.id=p.task_id
             JOIN chat_dispatch d ON d.task_id=t.id WHERE p.token=? AND p.used=0 AND p.expires>?
-            AND t.owner=? AND t.status='processing' AND json_extract(t.raw_json,'$.transport')='whale'
+            AND t.owner=? AND t.status='processing' AND json_extract(t.raw_json,'$.transport') IN ('whale','qq')
             AND d.status IN ('attempted','queued') AND json_extract(d.detail,'$.provider')='astrbot'
             AND json_extract(d.detail,'$.session_id')=p.session_id''',(token,time.time(),OWNER)).fetchone()
         if not row:raise ValueError('本轮语音许可无效、已使用或过期')

@@ -9,5 +9,5 @@ for name in files:
     path=root/name
     if path.is_symlink():raise ValueError('Symlink is not a release input: '+name)
     if path.is_file():manifest[name]=hashlib.sha256(path.read_bytes()).hexdigest()
-(root/'SOURCE_MANIFEST.json').write_text(json.dumps({'version':'0.1.0','files':manifest},ensure_ascii=False,indent=2)+'\n',encoding='utf-8',newline='\n')
+(root/'SOURCE_MANIFEST.json').write_text(json.dumps({'version':'0.3.0','files':manifest},ensure_ascii=False,indent=2)+'\n',encoding='utf-8',newline='\n')
 print('Source manifest files:',len(manifest))

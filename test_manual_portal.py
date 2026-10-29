@@ -1,6 +1,10 @@
 import json
 import tempfile
 import unittest
+import threading
+import urllib.request
+import urllib.error
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,6 +12,70 @@ from app import manual_portal as portal
 
 
 class PortalTests(unittest.TestCase):
+    def test_http_record_edit_requires_token_and_keeps_plugin_lookup_available(self):
+        with tempfile.TemporaryDirectory(dir=portal.local_images.ROOT) as folder:
+            server=ThreadingHTTPServer(('127.0.0.1',0),portal.Handler)
+            port=server.server_address[1]
+            jobs={'done':{'id':'done','state':'done'}}
+            with patch.object(portal,'PORT',port),patch.object(portal,'STATE',Path(folder)),patch.object(portal,'JOBS',jobs):
+                thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+                op=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                def post(token):
+                    request=urllib.request.Request(f'http://127.0.0.1:{port}/api/records',
+                        data=b'{"action":"delete","ids":["done"]}',headers={'X-Manual-Token':token,'Content-Type':'application/json'})
+                    return op.open(request,timeout=3)
+                try:
+                    with self.assertRaises(urllib.error.HTTPError) as error:post('wrong')
+                    self.assertEqual(error.exception.code,403);error.exception.close();self.assertNotIn('deleted_at',jobs['done'])
+                    with post(portal.TOKEN) as response:self.assertEqual(json.load(response)['changed'],1)
+                    with op.open(f'http://127.0.0.1:{port}/api/jobs',timeout=3) as response:self.assertEqual(json.load(response)['jobs'],[])
+                    with op.open(f'http://127.0.0.1:{port}/api/jobs?include_deleted=1',timeout=3) as response:self.assertEqual(json.load(response)['jobs'][0]['id'],'done')
+                finally:
+                    server.shutdown();server.server_close();thread.join(timeout=3)
+
+    def test_delete_and_restore_preserve_image_files_and_completed_job_lookup(self):
+        with tempfile.TemporaryDirectory(dir=portal.local_images.ROOT) as folder:
+            root=Path(folder);image=root/'saved.png';image.write_bytes(b'original file')
+            jobs={'done':{'id':'done','state':'done','files':['saved.png']}}
+            with patch.object(portal,'STATE',root),patch.object(portal,'JOBS',jobs):
+                result=portal.edit_records({'action':'delete','ids':['done']})
+                self.assertEqual(result['changed'],1);self.assertEqual(portal.visible_jobs(),[])
+                self.assertEqual(portal.visible_jobs(True)[0]['id'],'done')
+                self.assertIn('deleted_at',json.loads((root/'jobs.json').read_text())['done'])
+                self.assertEqual(image.read_bytes(),b'original file')
+                portal.edit_records({'action':'restore','ids':['done']})
+                self.assertEqual(portal.visible_jobs()[0]['id'],'done')
+                self.assertNotIn('deleted_at',jobs['done'])
+
+    def test_clear_skips_running_and_submitting_and_is_idempotent(self):
+        jobs={state:{'id':state,'state':state} for state in ('running','submitting','done','failed','uncertain')}
+        with patch.object(portal,'JOBS',jobs),patch.object(portal,'persist'):
+            result=portal.edit_records({'action':'delete','all_finished':True})
+            self.assertEqual(result['changed'],3);self.assertEqual(result['skipped'],2)
+            self.assertEqual({x['state'] for x in portal.visible_jobs()},{'running','submitting'})
+            self.assertEqual(portal.edit_records({'action':'delete','all_finished':True})['changed'],0)
+
+    def test_delete_failure_rolls_back_in_memory(self):
+        jobs={'done':{'id':'done','state':'done'}}
+        with patch.object(portal,'JOBS',jobs),patch.object(portal,'persist',side_effect=OSError):
+            with self.assertRaises(OSError):portal.edit_records({'action':'delete','ids':['done']})
+            self.assertNotIn('deleted_at',jobs['done'])
+
+    def test_record_actions_validate_ids_before_any_mutation(self):
+        jobs={'done':{'id':'done','state':'done'}}
+        with patch.object(portal,'JOBS',jobs),patch.object(portal,'persist') as persist:
+            for data in ({'action':'delete','ids':['done','unknown']},{'action':'delete','ids':[]},
+                         {'action':'delete','ids':['../file']},{'action':'restore','all_finished':True}):
+                with self.assertRaises(ValueError):portal.edit_records(data)
+            persist.assert_not_called();self.assertNotIn('deleted_at',jobs['done'])
+
+    def test_visible_limit_counts_only_visible_records(self):
+        jobs={str(i):{'id':str(i),'state':'done','deleted_at':1} for i in range(40)}
+        jobs['0'].pop('deleted_at')
+        with patch.object(portal,'JOBS',jobs):
+            self.assertEqual([x['id'] for x in portal.visible_jobs()],['0'])
+            self.assertEqual(len(portal.visible_jobs(True)),30)
+
     def test_text_and_multiple_references_use_native_qwen_latent(self):
         with patch.object(portal, 'UPLOADS', {'a.png', 'b.png'}):
             for refs in ([], ['a.png'], ['a.png', 'b.png']):

@@ -107,7 +107,8 @@ class SharedVideoTests(unittest.TestCase):
         store=LiveStore(self.root/'test.sqlite3');self.addCleanup(store.db.close);db=store.db
         with db:
             db.execute('INSERT INTO live_tasks VALUES(?,?,?,?,?,NULL)',('a'*32,'owner',1,json.dumps({'kind':'text','raw_text':'看看这个视频'}),'pending'))
-            db.execute('INSERT INTO media_records VALUES(?,?,?,?,?,NULL)',('b'*32,'owner',0,'video_card',json.dumps({'shared_video_analysis':{'status':'processing'}})))
+            db.execute('INSERT INTO live_tasks VALUES(?,?,?,?,?,NULL)',('b'*32,'owner',0,json.dumps({'kind':'shared_video'}),'resource_saved'))
+            db.execute('INSERT INTO media_records VALUES(?,?,?,?,?,NULL)',('b'*32,'owner',0,'video_card',json.dumps({'status':'saved','shared_video_analysis':{'status':'processing'}})))
         runner=MagicMock()
         self.assertIsNone(dispatch_one(db,runner=runner,executable='codex.exe'))
         runner.assert_not_called()

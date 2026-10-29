@@ -28,3 +28,5 @@ AstrBot自有venv没有imageio_ffmpeg，首次上线保存字幕因导入失败�
 本次明确匹配的两条失败历史（seq58/59），从实际gsv工具参数及对应缓存音频恢复原文，使用原转换器核验散列后仅补字幕元数据；不重发、不改发送状态。没有依据的旧语音仍不补造。重新打开App读取历史后显示。
 
 AstrBot原生Windows重启会创建可见控制台，已将该安装的`core/process_restart.py`替换进程标志改为CREATE_NO_WINDOW并保存备份；升级后复核，避免恢复黑色窗口。
+
+2026-10-28 QQ语音原文：voice_captions使用caption专用校验，允许已领取主人鲸聊/QQ任务及当前有效的日记主动任务；默认plugin_audio迟到音乐权限仍仅鲸聊，不扩展。GPT-SoVITS模块reload(voice_gate)后同时导入并reload(app.plugin_audio)、reload(app.voice_captions)，避免AstrBot缓存旧校验。公共reply_batch在QQ每段音频后插入实际合成原文，邻接重复原文去重并保持音频在前；鲸聊仍仅保存caption供展开。镜像为通道生成段，模型最多12段和6000字原限制保留，QQ最终最多24条。需正常加载管理台并热重载语音插件。

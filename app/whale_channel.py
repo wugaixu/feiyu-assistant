@@ -23,6 +23,8 @@ REGISTRY=ROOT/'whale-data/whale-devices.json'
 DEVICE_RE=re.compile(r'[0-9a-f]{64}')
 GET_ROUTES={'/','/favicon.ico','/api/overview','/api/threads','/api/agents/dsh','/api/agents/astrbot','/api/activity','/api/tasks','/api/outbound','/api/comments','/api/comment-login','/api/storage','/api/channels','/api/app/ping'}
 POST_ROUTES={'/api/target','/api/agent','/api/astrbot/session','/api/policy','/api/activity','/api/channels','/api/local-image'}
+GET_ROUTES.add('/api/groups')
+POST_ROUTES.add('/api/groups')
 
 
 def settings():
@@ -192,8 +194,9 @@ def state(db):
     except (OSError,ValueError,KeyError):pass
     gateway=gateway_health() if config.get('standalone') else {}
     if config.get('standalone'):pairing_url='http://127.0.0.1:8795/whale-panel'
-    return {'enabled':bool(config.get('enabled')),'remote_management':bool(config.get('remote_management')),
-            'standalone':bool(config.get('standalone')),'gateway_online':gateway.get('ok') is True,
+    from app import qq_channel
+    return {'qq':qq_channel.state(),'enabled':bool(config.get('enabled')),'remote_management':bool(config.get('remote_management')),
+            'standalone':bool(config.get('standalone')),'gateway_online':gateway.get('ok') is True,'public_network':public_health(),
             'devices':config.get('devices',[]),'device_info':device_info(config),
             'device_groups':device_groups(device_info(config),route.get('device')),'active':route,'pairing_url':pairing_url,
             'note':'私聊固定回复到来源；此选择用于主动联系和作品分享。鲸聊为自制App，并非腾讯微信。'}
@@ -289,3 +292,13 @@ def configure(db,body):
         channels.schema(db)
         with db:channels.observe(db,body['channel'],body.get('device'))
     return state(db)
+
+
+def public_health():
+    """Only fresh direct-ingress checks count; a local gateway is insufficient."""
+    try:
+        value=json.loads((ROOT/'whale-data/public-health.json').read_text(encoding='utf-8'))
+        if not 0<=time.time()-float(value.get('checked_at',0))<180:raise ValueError('stale')
+        if value.get('reachable') not in (True,False,None):raise ValueError('invalid')
+        return {'reachable':value.get('reachable'),'state':value.get('state'),'checked_at':value.get('checked_at')}
+    except (OSError,ValueError,TypeError):return {'reachable':None,'state':'unverified'}

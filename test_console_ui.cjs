@@ -49,14 +49,12 @@ function setup(){
  assert.equal(opened,'about:blank');
  assert.equal(win.location.href,'http://127.0.0.1:6185/');
  t=setup();
- t.ctx.activityResponse={config:{browse_enabled:true,windows:[['10:30','12:30']],window_limits:[6],window_wakes:[2],max_per_wake:5,daily_shares:3,proactive_enabled:true,proactive_mode:'agent',proactive_start:'00:00',proactive_end:'23:59',daily_min:100,daily_max:300,min_gap_minutes:30,idle_minutes:10,no_reply_pause:true},count_limits:{daily_min:0,daily_max:null},plans:{},jobs:[],videos_today:0};
+ t.ctx.activityResponse={config:{browse_enabled:true,windows:[['10:30','12:30']],window_limits:[6],window_wakes:[2],max_per_wake:5,daily_shares:3},diary_proactive:{selected_astrbot:true,plugin:{enabled:true,patrol_minutes:15,daily_limit_private:3,min_interval_minutes:120,updated_at:1},recent:[]},plans:{},jobs:[],videos_today:0};
  t.run('api=async()=>activityResponse');await t.run("renderActivity(document.getElementById('main'))");
- for(const id of ['act_min','act_max']){
-  const input=t.nodes.get('main').innerHTML.match(new RegExp('<input id="'+id+'"[^>]+>'))[0];
-  assert.doesNotMatch(input,/\bmax=/);assert.match(input,/type="number"/);
- }
- assert.match(t.nodes.get('main').innerHTML,/value="300"/);
- assert.doesNotMatch(t.nodes.get('main').innerHTML,/新版后端等待正常重启/);
+ assert.match(t.nodes.get('main').innerHTML,/情绪日记 · 主动消息/);
+ assert.doesNotMatch(t.nodes.get('main').innerHTML,/id="act_mode"|id="act_min"|id="act_proactive"/);
+ assert.match(t.nodes.get('main').innerHTML,/act_browse/);
+ assert.doesNotMatch(t.nodes.get('main').innerHTML,/新版接入尚待/);
  // Remote read requests are deduplicated, and any write invalidates their cache.
  t=setup();t.ctx.window.__WHALE_REMOTE__=true;
  let requests=0;t.ctx.fetch=async()=>{requests++;return {ok:true,json:async()=>({version:requests})};};

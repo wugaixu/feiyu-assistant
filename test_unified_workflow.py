@@ -53,6 +53,25 @@ class UnifiedMaterialTests(unittest.TestCase):
                 self.assertEqual(self.db.execute('SELECT status FROM live_tasks').fetchone()[0],'done')
                 self.assertEqual(self.db.execute('SELECT status FROM chat_dispatch').fetchone()[0],'processed')
 
+    def test_shared_rules_are_readable_frozen_and_not_repeated_in_envelope(self):
+        record=self.image();context=self.packet(record)
+        envelope=task_context.request(self.task,OWNER,{'kind':'text','raw_text':'看图'},[record],write=False)
+        payload=json.loads(envelope.splitlines()[1])
+        rules=Path(payload['instructions_file'])
+        self.assertEqual(rules.read_text(encoding='utf-8'),task_context.RULES_FILE.read_text(encoding='utf-8'))
+        self.assertNotIn('公开评论',envelope)
+        self.assertNotIn('visual_files',payload)  # Paths are listed once, in context.md.
+        self.assertLess(len(envelope),1000)
+        token=local_vision.permit(self.db,self.task,'session',[record])
+        catalog=task_materials.for_task(self.db,self.task)
+        page=local_vision.read_text(self.db,token,rules)
+        self.assertEqual(page,task_materials.read_text(catalog['texts'],rules))
+        self.assertIsNone(page['next_offset'])
+        self.assertIn('先登记草稿',page['text'])
+        # A caller cannot replace trusted instructions after the permit freezes them.
+        rules.write_text('changed',encoding='utf-8')
+        with self.assertRaises(ValueError):local_vision.read_text(self.db,token,rules)
+
     def test_reconcile_only_repairs_completed_metadata_without_creating_replies(self):
         from app.task_lifecycle import reconcile_completed
         reply_batch.finish(self.db,self.task,[{'type':'text','text':'完成'}])

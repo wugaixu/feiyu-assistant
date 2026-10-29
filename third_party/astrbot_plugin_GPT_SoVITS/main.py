@@ -17,6 +17,11 @@ if str(PROJECT) not in sys.path:
     sys.path.insert(0, str(PROJECT))
 try:
     from app import voice_gate
+    from importlib import reload
+    voice_gate = reload(voice_gate)
+    from app import plugin_audio, voice_captions
+    plugin_audio = reload(plugin_audio)
+    voice_captions = reload(voice_captions)
 except Exception:  # the project path moved; speech stays text-only below
     voice_gate = None
     logger.warning("voice_gate unavailable; GPT-SoVITS speech gate degraded")

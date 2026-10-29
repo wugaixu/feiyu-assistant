@@ -6,7 +6,7 @@
 
 ```powershell
 python deploy/doctor.py --runtime-dir D:\FeiyuData
-cd D:\FeiyuData\installed\0.2.0
+cd D:\FeiyuData\installed\0.3.0
 python -m unittest discover -q
 node --test test_whale_bridge.mjs test_whale_standalone.mjs test_whale_pairing.mjs test_whale_upload.mjs
 node --test dsh_bridge/test.mjs
@@ -50,3 +50,15 @@ node test_whale_voice_order.cjs
 只发布源码、示例、许可和明确的APK资产。检查API Key、Cookie、用户名私聊、设备令牌、数据库、模型、浏览器profile、签名私钥、临时截图和真人头像；它们不应在仓库/ZIP里。不要把 `deployment.local.json` 或运行目录一起压缩。
 
 保留原依赖许可；记录版本与文件SHA256。每次发布均跑语音顺序、文件上传、跨设备鉴权和队列幂等回归，不能仅用Python语法通过代替行为测试。
+
+本版补充：node test_manual_portal_ui.cjs、node test_group_ui.cjs；QQ、日记、群聊使用隔离事件与数据库，不调用真实账号。源码与配置模板测试不能证明用户已扫码登录或手机已收到。
+
+
+## 2026-10-29 本地发布前证据
+
+- 开发树：597项Python检查，1项跳过。
+- 脱敏模板在全新隔离运行目录配置后：597项Python检查，2项跳过（可选本机依赖/权限条件）。
+- Node协议、网关、上传、DSH与群聊等23项检查通过；管理台、手动生图、群管理、手机语音、消息顺序及重连/管理台恢复七套UI脚本通过。
+- 凭据/私有运行资料扫描无命中；签名文件、模型权重、数据库和聊天内容未复制。
+- Android源码同步既有1.5.3恢复修复；本轮未构建或安装APK。
+- 生产只读检查确认管理台、SDK、鲸聊和主AstrBot可访问；不表示每条历史消息送达。本轮未重启生产、未对外试发。

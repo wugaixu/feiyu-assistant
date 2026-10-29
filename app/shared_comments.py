@@ -38,7 +38,7 @@ def manual_attempt_count(db,day):
     return db.execute('SELECT count(*) FROM manual_comment_attempts WHERE day=?',(day,)).fetchone()[0]
 
 def eligible(message,record,cfg):
-    return (cfg.get('enabled') is True and message.get('transport')=='sdk'
+    return (cfg.get('enabled') is True and not message.get('is_group') and message.get('transport')=='sdk'
         and not message.get('sample_only') and record.get('source')=='sdk'
         and record.get('kind')=='video_card'
         and (record.get('video') or {}).get('source')=='sdk_shared_work'

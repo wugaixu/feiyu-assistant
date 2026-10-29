@@ -31,7 +31,7 @@ async function main(){
 
   // Do not poll since zero while asynchronous voice history is still loading.
   let resolveVoices,polls=0,draws=[];
-  const initial={api:async()=>({paired:true,workflow:true,seq:42,history:[{id:'bot',role:'assistant',kind:'text',text:'old'},{id:'user',role:'user',kind:'text',text:'hi'}]}),cfg:{},titleText:{},showChat(){},showGuide(){throw Error('unexpected guide');},applyBackground(){},hiddenSet:{},seenMsgIds:{bot:true},bindVoiceHistory:()=>new Promise(resolve=>{resolveVoices=resolve;}),addRow:(_side,_text,_avatar,id)=>draws.push(id),addAssistant:(_text,id)=>draws.push(id),lastSeq:0,startPolling(){polls++;},setStatus(){},removeStatus(){},showDispatchAttention(){}};
+  const initial={document:{getElementById:()=>({hidden:false})},clearTimeout(){},setTimeout(){},api:async()=>({paired:true,workflow:true,seq:42,history:[{id:'bot',role:'assistant',kind:'text',text:'old'},{id:'user',role:'user',kind:'text',text:'hi'}]}),cfg:{},titleText:{},showChat(){},showGuide(){throw Error('unexpected guide');},applyBackground(){},hiddenSet:{},seenMsgIds:{bot:true},bindVoiceHistory:()=>new Promise(resolve=>{resolveVoices=resolve;}),addRow:(_side,_text,_avatar,id)=>draws.push(id),addAssistant:(_text,id)=>draws.push(id),lastSeq:0,startPolling(){polls++;},setStatus(){},removeStatus(){},showDispatchAttention(){}};
   vm.createContext(initial);vm.runInContext(section('  var assistantWorkflow=false;','  var lastDispatchNotice='),initial);
   initial.loadState();await new Promise(setImmediate);assert.equal(polls,0);
   resolveVoices({});await new Promise(setImmediate);assert.equal(polls,1);assert.equal(initial.lastSeq,42);assert.deepEqual(draws,['user']);

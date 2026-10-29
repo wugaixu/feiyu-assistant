@@ -24,6 +24,8 @@ if str(PROJECT) not in sys.path:
     sys.path.insert(0, str(PROJECT))
 try:
     from app import voice_gate
+    from importlib import reload
+    voice_gate = reload(voice_gate)
 except Exception:
     voice_gate = None
     logger.warning("voice_gate unavailable; GPT-SoVITS speech gate degraded")

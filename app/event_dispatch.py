@@ -17,16 +17,15 @@ TARGET_FILE = Path(r'__RUNTIME_ROOT__\dispatch-target.json')
 STATE_DB = Path(r'__CODEX_HOME__\state_5.sqlite')
 
 THREAD_ID_PATTERN = re.compile(r'[0-9a-f-]{36}')
-# Media only rides along with a text event when it arrived shortly before that
-# text. Anything older belongs to a different moment and must not be glued on.
-ATTACH_WINDOW_SECONDS = 600
+# Legacy names retained for integrations; association now uses burst membership.
+ATTACH_WINDOW_SECONDS = 10
 # Share cards regularly reach the SDK a few milliseconds *after* the text that
 # accompanies them, so forward association is allowed for this grace period;
 # the standalone-media path uses the same 10 seconds before delivering alone.
 ATTACH_FORWARD_SECONDS = 10
 # A burst of owner messages is delivered once, after the source has been quiet
 # for this long; every new message restarts the quiet window.
-BURST_QUIET_SECONDS = 15
+BURST_QUIET_SECONDS = 10
 
 
 def _source_of(raw):
@@ -41,67 +40,69 @@ def _source_latest(db, owner, transport, device):
     return db.execute('''SELECT MAX(received) FROM live_tasks
         WHERE owner=? AND COALESCE(json_extract(raw_json,'$.transport'),'sdk')=?
           AND COALESCE(json_extract(raw_json,'$.reply_device'),'')=?
+          AND COALESCE(json_extract(raw_json,'$.sample_only'),0)=0
+          AND COALESCE(json_extract(raw_json,'$.direction'),'')!='outgoing'
+          AND COALESCE(json_extract(raw_json,'$.origin'),'') NOT IN ('local_schedule','diary_proactive')
           AND status<>'media_pending' ''',
         (owner, transport, device)).fetchone()[0]
 
 
-def _merge_burst(db, row, transport, device, latest):
-    """Fold the contiguous message chain that ends at ``latest`` into ``row``."""
-    from app.task_context import summary
-    siblings = db.execute('''SELECT id,raw_json,received,status FROM live_tasks
-        WHERE owner=? AND id<>? AND status IN ('pending','resource_saved')
+def _burst_chain(db,owner,transport,device,latest):
+    """Only the contiguous, unreserved chain around this source's latest event."""
+    rows=db.execute("""SELECT id,raw_json,received,status FROM live_tasks
+        WHERE owner=? AND status IN ('pending','resource_saved','media_pending')
           AND id NOT IN (SELECT task_id FROM chat_dispatch)
           AND COALESCE(json_extract(raw_json,'$.transport'),'sdk')=?
           AND COALESCE(json_extract(raw_json,'$.reply_device'),'')=?
-          AND received>=?
-        ORDER BY received''', (row[1], row[0], transport, device, float(latest) - 3600)).fetchall()
-    nodes = [(row[0], row[2], row[3], 'pending')] + [(item[0], item[1], item[2], item[3]) for item in siblings]
-    nodes.sort(key=lambda item: float(item[2]))
-    # Only the contiguous chain of messages counts as one burst: a gap wider
-    # than the quiet window starts a new one, so stale orphans never join.
-    chain = [nodes[-1]]
-    for item in reversed(nodes[:-1]):
-        if float(chain[-1][2]) - float(item[2]) > BURST_QUIET_SECONDS:
-            break
-        chain.append(item)
-    chain.reverse()
-    if len(chain) < 2:
-        return row
-    try:
-        base = json.loads(row[2] or '{}')
-    except ValueError:
-        base = {}
-    messages = base.get('merged_messages') or [{'task_id': row[0], 'kind': base.get('kind'),
-                                                'text': base.get('raw_text', ''), 'received': row[3]}]
-    merged = []
-    for item_id, item_raw, item_received, item_status in chain:
-        if item_id == row[0]:
-            continue
-        try:
-            value = json.loads(item_raw or '{}')
-        except ValueError:
-            value = {}
-        # Unsaved media still being prepared must not be folded in yet.
-        if item_status == 'resource_saved' and value.get('kind') not in ('shared_media', 'shared_video'):
-            continue
-        merged.append(item_id)
-        messages.append({'task_id': item_id, 'kind': value.get('kind'),
-                         'text': summary(value), 'received': item_received})
-    if not merged:
-        return row
+          AND received BETWEEN ? AND ? ORDER BY received,rowid""",
+        (owner,transport,device,float(latest)-3600,float(latest)+BURST_QUIET_SECONDS)).fetchall()
+    nodes=[];unavailable=set()
+    for row in rows:
+        raw=json.loads(row[1]);end=max([float(row[2])]+[float(x.get('received',row[2])) for x in raw.get('merged_messages',[])])
+        if raw.get('sample_only'):continue
+        if row[3]=='resource_saved':
+            record=db.execute('SELECT record_json,attached_to FROM media_records WHERE id=?',(row[0],)).fetchone()
+            if not record or record[1] not in (None,row[0]) or json.loads(record[0]).get('status')!='saved':
+                unavailable.add(row[0])  # Keep arrival timing; never attach its failed resource.
+        nodes.append((row,end))
+    anchor=next((i for i,(_,end) in enumerate(nodes) if end==float(latest)),None)
+    if anchor is None:return []  # Old orphans never become a fresh event.
+    left=right=anchor
+    while left and float(nodes[left][0][2])-nodes[left-1][1]<=BURST_QUIET_SECONDS:left-=1
+    while right+1<len(nodes) and float(nodes[right+1][0][2])-nodes[right][1]<=BURST_QUIET_SECONDS:right+=1
+    return [row for row,_ in nodes[left:right+1] if row[0] not in unavailable]
+
+
+def _merge_burst(db,row,transport,device,latest):
+    """Merge once, preserving arrival order, message identities and links."""
+    from app.task_context import summary
+    chain=_burst_chain(db,row[1],transport,device,latest)
+    if any(item[3]=='media_pending' for item in chain):return None
+    if len(chain)<2:return row
+    messages=[];links=[]
+    for task_id,raw,received,status in chain:
+        value=json.loads(raw)
+        messages.extend(value.get('merged_messages') or [{
+            'task_id':task_id,'kind':value.get('kind'),'original_kind':value.get('original_kind'),
+            'text':summary(value),'received':received,'links':value.get('links',[])}])
+        links.extend(value.get('links',[]))
+    messages.sort(key=lambda item:float(item.get('received',0)))
+    base=json.loads(row[2]);base['merged_messages']=messages
+    base['raw_text']='\n'.join(str(item.get('text') or '').strip() for item in messages if str(item.get('text') or '').strip())
+    base['links']=list(dict.fromkeys(str(link) for link in links))
+    new_raw=json.dumps(base,ensure_ascii=False)
     with db:
         db.execute('BEGIN IMMEDIATE')
-        for sibling_id in merged:
-            db.execute('UPDATE media_records SET attached_to=? WHERE id=? AND (attached_to IS NULL OR attached_to=?)',
-                       (row[0], sibling_id, sibling_id))
-            db.execute("UPDATE live_tasks SET status='merged',result=? WHERE id=? AND status IN ('pending','resource_saved')",
-                       (json.dumps({'merged_into': row[0]}, ensure_ascii=False), sibling_id))
-        base['merged_messages'] = messages
-        base['raw_text'] = '\n'.join(str(item.get('text') or '').strip() for item in messages
-                                     if str(item.get('text') or '').strip())
-        new_raw = json.dumps(base, ensure_ascii=False)
-        db.execute('UPDATE live_tasks SET raw_json=? WHERE id=?', (new_raw, row[0]))
-    return (row[0], row[1], new_raw, row[3])
+        # Recheck every participant under the lock before changing any ownership.
+        for task_id,raw,received,status in chain:
+            current=db.execute('SELECT raw_json,status FROM live_tasks WHERE id=?',(task_id,)).fetchone()
+            if current!=(raw,status) or db.execute('SELECT 1 FROM chat_dispatch WHERE task_id=?',(task_id,)).fetchone():return None
+        for task_id,_,_,_ in chain:
+            db.execute('UPDATE media_records SET attached_to=? WHERE id=? AND (attached_to IS NULL OR attached_to=?)',(row[0],task_id,task_id))
+            if task_id!=row[0]:
+                db.execute("UPDATE live_tasks SET status='merged',result=? WHERE id=?",(json.dumps({'merged_into':row[0]}),task_id))
+        db.execute('UPDATE live_tasks SET raw_json=? WHERE id=?',(new_raw,row[0]))
+    return row[0],row[1],new_raw,row[3]
 
 
 def target_config():
@@ -219,52 +220,48 @@ def dispatch_one(db, runner=None, executable=None):
     db.commit()
     candidates = db.execute('''SELECT id,owner,raw_json,received FROM live_tasks
         WHERE status='pending' AND id NOT IN (SELECT task_id FROM chat_dispatch)
-        ORDER BY received''').fetchall()
+        ORDER BY CASE WHEN json_extract(raw_json,'$.is_group')=1 THEN 1 ELSE 0 END,received''').fetchall()
     if not candidates:
         return None
     row = None
+    checked_sources=set()
     for candidate in candidates:
         transport, device = _source_of(candidate[2])
+        source=(candidate[1],transport,device)
+        if source in checked_sources:continue
+        checked_sources.add(source)
         last_received = _source_latest(db, candidate[1], transport, device)
-        # Anything older than the current quiet window belongs to a past burst
-        # and must not ride along with today's messages.
-        if last_received is None or float(last_received) - float(candidate[3]) > BURST_QUIET_SECONDS:
-            continue
-        if time.time() - float(last_received) < BURST_QUIET_SECONDS:
-            return None  # Owner may still be typing; wait for the source to go quiet.
-        row = candidate
+        if last_received is None:continue
+        chain=_burst_chain(db,candidate[1],transport,device,last_received)
+        if not chain or any(item[3]=='media_pending' for item in chain):continue
+        # A long chain is one turn even when its first-to-last span exceeds 10s.
+        tail=max(float(item[2]) for item in chain)
+        if time.time()-max(tail,float(last_received))<BURST_QUIET_SECONDS:continue
+        pending=next((item for item in chain if item[3]=='pending'),None)
+        if not pending:continue
+        row=(pending[0],candidate[1],pending[1],pending[2])
         break
-    if not row:
-        return None
-    row = _merge_burst(db, row, transport, device, float(last_received))
-    if json.loads(row[2]).get('kind') in ('shared_media','shared_video'):
-        # A just-arrived following text may claim a standalone media task that
-        # was prepared, but has not yet been dispatched. Deliver the pair once.
-        from app.channels import same_source
-        following=next((r for r in db.execute("SELECT id,owner,raw_json,received FROM live_tasks WHERE owner=? AND status='pending' AND id NOT IN (SELECT task_id FROM chat_dispatch) AND received BETWEEN ? AND ? AND json_extract(raw_json,'$.kind') IN ('text','voice_transcript') ORDER BY received",(row[1],row[3],float(row[3] or 0)+ATTACH_WINDOW_SECONDS)).fetchall() if same_source(row[2],r[2])),None)
-        if following:row=following
-    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    media = []
+    if not row:return None
+    row=_merge_burst(db,row,transport,device,float(last_received))
+    if not row:return None
+    tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    media=[]
     if 'media_records' in tables and json.loads(row[2]).get('kind')!='video_round':
         from app.channels import same_source
-        preceding=db.execute("SELECT raw_json FROM live_tasks WHERE owner=? AND status='media_pending' AND received BETWEEN ? AND ?", (row[1],float(row[3] or 0)-ATTACH_WINDOW_SECONDS,float(row[3] or 0)+ATTACH_FORWARD_SECONDS)).fetchall()
-        if any(same_source(row[2],m[0]) for m in preceding):
-            return None  # Save preceding media before delivering its associated text.
-        cutoff = float(row[3] or 0) - ATTACH_WINDOW_SECONDS
-        horizon = float(row[3] or 0) + ATTACH_FORWARD_SECONDS
-        for media_id, record_json, task_json in db.execute(
-                '''SELECT m.id, m.record_json, t.raw_json FROM media_records m
-                   LEFT JOIN live_tasks t ON t.id = m.id
-                   WHERE m.owner=? AND m.attached_to IS NULL AND COALESCE(t.received,m.received) BETWEEN ? AND ?
-                   ORDER BY m.received''', (row[1], cutoff, horizon)):
-            try:
-                sample_only = bool(json.loads(task_json or '{}').get('sample_only'))
-            except ValueError:
-                sample_only = False
-            # Diagnostic samples and stale records never reach a live event.
-            if sample_only or not same_source(row[2],task_json):
-                continue
-            media.append((media_id, json.loads(record_json)))
+        raw=json.loads(row[2])
+        members={row[0],*(x['task_id'] for x in raw.get('merged_messages',[]))}
+        times=[float(row[3])]+[float(x.get('received',row[3])) for x in raw.get('merged_messages',[])]
+        # Read both newly claimed and already merged media. All three hosts
+        # receive the same packet, not just the worker's database lookup.
+        for media_id,record_json,task_json,attached in db.execute("""SELECT m.id,m.record_json,t.raw_json,m.attached_to
+            FROM media_records m JOIN live_tasks t ON t.id=m.id
+            WHERE m.owner=? AND (m.attached_to=? OR (m.attached_to IS NULL AND t.received BETWEEN ? AND ?))
+            ORDER BY t.received,m.rowid""",(row[1],row[0],min(times),max(times))):
+            if media_id not in members or not same_source(row[2],task_json):continue
+            if json.loads(task_json).get('sample_only'):continue
+            record=json.loads(record_json)
+            if record.get('status')=='unavailable':continue
+            media.append((media_id,record))
         if any(record.get('shared_video_analysis',{}).get('status')=='processing' or record.get('audio_analysis',{}).get('status')=='processing' for _,record in media):return None
     config = target_config()
     provider = config.get('provider', 'codex')
@@ -276,12 +273,14 @@ def dispatch_one(db, runner=None, executable=None):
         settings=config.get('astrbot',{})
         available=astrbot_client.state(cache_seconds=5)
         target=settings.get('session_id')
-        if not available['online'] or not any(x['id']==target for x in available['sessions']):
+        selected=next((x for x in available['sessions'] if x['id']==target),None)
+        if not available['online'] or not selected or selected.get('available') is False:
             raise ValueError('AstrBot目标会话未配置或服务未就绪')
         if not any(x['id']==settings.get('config_id','default') for x in available['configs']):
             raise ValueError('AstrBot人设配置已不可用')
         from app.workflow_protocol import astrbot_reader
-        if not astrbot_reader()['ready']:raise ValueError('AstrBot统一素材插件未就绪；保留待投递任务')
+        reader=astrbot_reader(selected.get('instance_id','default'))
+        if not reader['ready']:raise ValueError('AstrBot统一素材插件未就绪；保留待投递任务')
         binary=None
     elif provider == 'dsh':
         from app import dsh_client
@@ -308,6 +307,15 @@ def dispatch_one(db, runner=None, executable=None):
         if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
         current=db.execute('SELECT status FROM live_tasks WHERE id=?',(row[0],)).fetchone()
         if not current or current[0]!='pending':return None
+        # A message can arrive while checking host availability. Recheck under
+        # the reservation lock so this turn does not cut off a fresh supplement.
+        if _source_latest(db,row[1],transport,device)!=last_received:return None
+        if any(item[3]=='media_pending' for item in _burst_chain(db,row[1],transport,device,last_received)):return None
+        raw=json.loads(row[2])
+        if raw.get('is_group'):
+            from app import group_chats
+            if not group_chats.task_allowed(db,raw):
+                db.execute("UPDATE live_tasks SET status='cancelled' WHERE id=?",(row[0],));return None
         if json.loads(row[2]).get('kind') in ('shared_video','shared_media'):
             attached=db.execute('SELECT attached_to FROM media_records WHERE id=?',(row[0],)).fetchone()
             if attached and attached[0] and attached[0]!=row[0]:
@@ -321,7 +329,7 @@ def dispatch_one(db, runner=None, executable=None):
                 # A standalone video already reserved for delivery cannot also
                 # become an attachment of a later text.
                 if media_id!=row[0] and db.execute('SELECT 1 FROM chat_dispatch WHERE task_id=?',(media_id,)).fetchone():continue
-                claimed=db.execute('UPDATE media_records SET attached_to=? WHERE id=? AND attached_to IS NULL',(row[0],media_id)).rowcount
+                claimed=db.execute('UPDATE media_records SET attached_to=? WHERE id=? AND (attached_to IS NULL OR attached_to=?)',(row[0],media_id,row[0])).rowcount
                 if not claimed:continue
                 claimed_media.append((media_id,record))
                 if media_id!=row[0]:

@@ -50,6 +50,7 @@ class VideoAudioTests(unittest.TestCase):
         store=LiveStore(':memory:');self.addCleanup(store.db.close);db=store.db
         r={**self.record,'shared_video_analysis':{'status':'done'},'audio_analysis':{'status':'processing'}}
         db.execute('INSERT INTO live_tasks VALUES(?,?,?,?,?,NULL)',('text','owner',2,'{"kind":"text"}','pending'))
+        db.execute('INSERT INTO live_tasks VALUES(?,?,?,?,?,NULL)',('audio','owner',1,'{"kind":"shared_media","original_kind":"video"}','resource_saved'))
         db.execute('INSERT INTO media_records VALUES(?,?,?,?,?,NULL)',('audio','owner',1,'video',json.dumps(r)));db.commit()
         with patch.object(ed,'codex_executable',side_effect=AssertionError('must wait')):
             self.assertIsNone(ed.dispatch_one(db))

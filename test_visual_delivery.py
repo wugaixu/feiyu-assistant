@@ -19,7 +19,8 @@ class VisualDeliveryTests(unittest.TestCase):
     def test_packet_and_envelope_directly_require_real_image_reading(self):
         record=self.image();push=envelope('a'*32,'owner',json.dumps({'kind':'text','raw_text':'看这张图'}),[record])
         payload=json.loads(push.splitlines()[1]);path=record['files'][0]['path']
-        self.assertEqual(payload['visual_files'],[path]);self.assertIn('实际看图',push)
+        self.assertNotIn('visual_files',payload)
+        self.assertIn('实际看图',Path(payload['instructions_file']).read_text(encoding='utf-8'))
         text=Path(payload['context_file']).read_text(encoding='utf-8')
         self.assertIn('必须阅读的图片',text);self.assertIn(path,text);self.assertIn('不代表已经看过',text)
         Path(path).write_bytes(b'changed');self.assertEqual(visual_delivery.inputs([record]),[])

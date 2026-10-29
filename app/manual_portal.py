@@ -64,6 +64,52 @@ def persist():
     temp.replace(STATE / 'jobs.json')
 
 
+def visible_jobs(include_deleted=False):
+    with LOCK:
+        return [dict(job) for job in reversed(list(JOBS.values()))
+                if include_deleted or not job.get('deleted_at')][:30]
+
+
+def edit_records(data):
+    """Recoverable record removal; never delete output files or active work."""
+    if not isinstance(data, dict) or data.get('action') not in ('delete', 'restore'):
+        raise ValueError('无效的记录操作')
+    action = data['action']
+    ids = data.get('ids')
+    if data.get('all_finished') is True:
+        if action != 'delete' or ids is not None:
+            raise ValueError('无效的批量操作')
+    elif not isinstance(ids, list) or not 1 <= len(ids) <= 500 or any(not isinstance(x, str) for x in ids):
+        raise ValueError('请选择1–500条记录')
+    with LOCK:
+        selected = list(JOBS) if data.get('all_finished') is True else list(dict.fromkeys(ids))
+        if any(key not in JOBS for key in selected):
+            raise ValueError('记录不存在，请刷新页面')
+        previous = {}
+        changed = []
+        skipped = 0
+        for key in selected:
+            job = JOBS[key]
+            if job.get('state') not in ('done', 'failed', 'uncertain'):
+                skipped += 1
+                continue
+            if bool(job.get('deleted_at')) == (action == 'delete'):
+                continue
+            previous[key] = dict(job)
+            if action == 'delete':
+                job['deleted_at'] = time.time()
+            else:
+                job.pop('deleted_at', None)
+            changed.append(key)
+        try:
+            if changed:
+                persist()
+        except OSError:
+            JOBS.update(previous)
+            raise
+        return {'ids': changed, 'changed': len(changed), 'skipped': skipped, 'action': action}
+
+
 def request_bytes(path, data=None, content_type=None, limit=40_000_000):
     op = urllib.request.build_opener(urllib.request.ProxyHandler({}), local_images._NoRedirect())
     headers = {'Content-Type': content_type} if content_type else {}
@@ -172,13 +218,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(403, {'error': '仅限本机访问'})
         path = urllib.parse.urlsplit(self.path).path
         if path == '/health':
-            return self.send(200, {'service': 'manual-qwen-portal', 'version': 1})
+            return self.send(200, {'service': 'manual-qwen-portal', 'version': 2, 'record_delete_version': 1})
         if path == '/':
             return self.send(200, HTML.read_text(encoding='utf-8').replace('__TOKEN__', TOKEN).encode('utf-8'), 'text/html; charset=utf-8')
         if path == '/api/jobs':
-            with LOCK:
-                jobs = list(JOBS.values())[-30:][::-1]
-                return self.send(200, {'jobs': jobs, 'output': str(OUTPUT)})
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            return self.send(200, {'jobs': visible_jobs(query.get('include_deleted') == ['1']),
+                                   'output': str(OUTPUT), 'record_delete_version': 1})
         if path.startswith('/image/'):
             name = urllib.parse.unquote(path[len('/image/'):])
             with LOCK:
@@ -196,7 +242,13 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < length <= 25_000_000:
                 raise ValueError('单张图片需小于25MB')
             body = self.rfile.read(length)
+            if self.path == '/api/records':
+                return self.send(200, edit_records(json.loads(body)))
             if self.path == '/api/upload':
+                # The backend idles out; wake it before the first upload too,
+                # otherwise uploading a reference image fails with 10061.
+                if not ensure_ready():
+                    raise ValueError('本地生图后端启动失败，请查看 comfyui.log')
                 result = json.loads(request_bytes('/upload/image', body, self.headers.get('Content-Type')))
                 name = '/'.join(filter(None, (result.get('subfolder'), result['name'])))
                 with LOCK:

@@ -46,8 +46,10 @@ class MediaTests(unittest.TestCase):
 
     def test_next_text_gets_media_paths_once(self):
         with self.db:
+            self.db.execute('INSERT INTO live_tasks(id,owner,received,raw_json,status) VALUES(?,?,?,?,?)',
+                            ('a'*32,'owner',1,'{"kind":"shared_media","original_kind":"image"}','resource_saved'))
             self.db.execute('INSERT INTO media_records VALUES(?,?,?,?,?,NULL)',
-                            ('a'*32,'owner',1,'image',json.dumps({'kind':'image','files':[{'path':'D:/media/test.png'}]})))
+                            ('a'*32,'owner',1,'image',json.dumps({'kind':'image','status':'saved','files':[{'path':'D:/media/test.png'}]})))
             self.db.execute('INSERT INTO live_tasks(id,owner,received,raw_json) VALUES(?,?,?,?)',
                             ('b'*32,'owner',2,'{"kind":"text","raw_text":"分析图片"}'))
         calls=[]
@@ -108,9 +110,11 @@ class MediaTests(unittest.TestCase):
         text_received = 100.000
         media_received = 100.004
         with self.db:
+            self.db.execute('INSERT INTO live_tasks(id,owner,received,raw_json,status) VALUES(?,?,?,?,?)',
+                            ('a'*32,'owner',media_received,'{"kind":"shared_video"}','resource_saved'))
             self.db.execute('INSERT INTO media_records VALUES(?,?,?,?,?,NULL)',
                             ('a'*32,'owner',media_received,'video_card',
-                             json.dumps({'kind':'video_card','files':[{'path':'D:/media/card.webm'}],
+                             json.dumps({'kind':'video_card','status':'saved','files':[{'path':'D:/media/card.webm'}],
                                          'shared_video_analysis':{'status':'saved'}})))
             self.db.execute('INSERT INTO live_tasks(id,owner,received,raw_json) VALUES(?,?,?,?)',
                             ('b'*32,'owner',text_received,'{"kind":"text","raw_text":"看这个"}'))

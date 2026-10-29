@@ -21,6 +21,8 @@ def ingest(db,events):
     from app import channels
     channels.schema(db)
     schema(db);accepted=0;rejected={}
+    from app import group_chats
+    group_chats.schema(db)
     db.execute('CREATE TABLE IF NOT EXISTS sdk_inbound_rejections(seq INTEGER PRIMARY KEY,reason TEXT NOT NULL,observed REAL NOT NULL)');db.commit()
     for event in events:
         seq=None
@@ -29,7 +31,10 @@ def ingest(db,events):
             if isinstance(event.get('seq'),bool) or not isinstance(event.get('seq'),(int,str)):raise ValueError('invalid_sequence')
             seq=int(event['seq'])
             if seq<1 or seq>9223372036854775807:raise ValueError('invalid_sequence')
-            if event.get('sender_uid')!=OWNER_UID or event.get('account_uid')!=ACCOUNT_UID:
+            is_group=event.get('is_group') is True
+            received=float(event.get('timestamp') or time.time())
+            group=group_chats.allowed(db,event.get('group_id'),event.get('sender_uid'),received) if is_group else None
+            if event.get('account_uid')!=ACCOUNT_UID or (is_group and (not group or event.get('sender_uid')==ACCOUNT_UID or event.get('thread_id')!=event.get('group_id'))) or (not is_group and (event.get('sender_uid')!=OWNER_UID or event.get('group_id'))):
                 raise ValueError('identity_mismatch')
             mid=event.get('message_id')
             if not isinstance(mid,str) or not mid.strip() or len(mid)>512:raise ValueError('invalid_message_id')
@@ -49,6 +54,10 @@ def ingest(db,events):
             message={'kind':mapped,'raw_text':text or '[抖音消息：'+kind+']','links':[],
                 'direction':'incoming','transport':'sdk','sdk_message_id':mid,'sdk_content':content,
                 'association_policy':'media_10s_v1','association_received_at':time.time()}
+            if is_group:
+                message.update(origin='group_chat',is_group=True,group_id=group['group_id'],group_name=group['group_name'],
+                    sender_uid=group['sender_uid'],sender_name=group['sender_name'],group_policy_revision=group['revision'],
+                    sdk_thread_id=event['thread_id'],reply_device='group:'+group['group_id']+':'+group['sender_uid'])
             raw=json.dumps(message,ensure_ascii=False)
         except (ValueError,TypeError,KeyError,OverflowError,AttributeError):
             reason='identity_mismatch' if isinstance(event,dict) and (event.get('sender_uid')!=OWNER_UID or event.get('account_uid')!=ACCOUNT_UID) else 'invalid_event'
@@ -60,11 +69,12 @@ def ingest(db,events):
             continue
         # Database failures remain fatal, retaining the last committed cursor.
         with db:
-            inserted=db.execute('INSERT OR IGNORE INTO sdk_inbound_ids VALUES(?,?)',(mid,task)).rowcount
+            dedup_id='group:'+group['group_id']+':'+mid if is_group else mid
+            inserted=db.execute('INSERT OR IGNORE INTO sdk_inbound_ids VALUES(?,?)',(dedup_id,task)).rowcount
             if inserted and task!='ignored_test':
                 state='media_pending' if mapped in ('image','video','audio','video_card') else 'pending'
                 db.execute('INSERT INTO live_tasks(id,owner,received,raw_json,status) VALUES(?,?,?,?,?)',(task,OWNER,received,raw,state))
-                channels.observe(db,'douyin')
+                if not is_group:channels.observe(db,'douyin')
                 accepted+=1
             db.execute('INSERT INTO sdk_inbound_cursor VALUES(1,?) ON CONFLICT(id) DO UPDATE SET seq=MAX(seq,excluded.seq)',(seq,))
     ingest.last_diagnostics={'rejected':sum(rejected.values()),'reasons':rejected}
@@ -91,7 +101,10 @@ def tick(db):
     activity=None
     try:
         from app import autonomy,local_runtime
-        if local_runtime.enabled():activity=autonomy.tick(db)
+        if local_runtime.enabled():
+            from app import diary_proactive
+            diary_proactive.tick(db)
+            activity=autonomy.tick(db)
     except Exception as exc:activity={'state':'error','error_class':type(exc).__name__}
     return {'state':'degraded' if sdk_error else 'listening','sdk_inbox_error':sdk_error,'accepted':accepted,'ingest':getattr(ingest,'last_diagnostics',{}),'dispatch':dispatch,'activity':activity,'updated_at':time.time()}
 
@@ -100,6 +113,8 @@ def main():
     lock=(ROOT/'sdk-receiver.lock').open('a+b');lock.write(b'0');lock.flush();lock.seek(0)
     msvcrt.locking(lock.fileno(),msvcrt.LK_NBLCK,1)
     store=LiveStore(ROOT/'assistant.sqlite3')
+    from app import group_chats
+    group_chats.schema(store.db)
     from app.task_lifecycle import reconcile_completed
     reconcile_completed(store.db)
     from concurrent.futures import ThreadPoolExecutor

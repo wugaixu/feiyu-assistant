@@ -31,7 +31,7 @@ def permit_valid(token, now=None):
             row = db.execute(
                 '''SELECT 1 FROM whale_voice_permits p JOIN live_tasks t ON t.id=p.task_id
                    WHERE p.token=? AND p.expires>? AND t.status='processing'
-                   AND json_extract(t.raw_json,'$.transport')='whale' ''',
+                   AND json_extract(t.raw_json,'$.transport') IN ('whale','qq') ''',
                 (token, stamp)).fetchone()
             return bool(row)
         finally:

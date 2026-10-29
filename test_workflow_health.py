@@ -93,4 +93,47 @@ class WorkflowHealthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT) as folder:
             p=Path(folder)/'missing.sqlite3';self.assertFalse(snapshot(p)['ok']);self.assertFalse(p.exists())
 
+class ChannelMonitoringTests(unittest.TestCase):
+    setUp=WorkflowHealthTests.setUp
+    stages=WorkflowHealthTests.stages
+
+    def test_qq_and_whale_do_not_depend_on_douyin(self):
+        self.wf['sdk']['online']=False
+        for channel in ('qq','whale'):
+            self.data['reply_routes']={channel:2}
+            self.data['reply_pending']=2
+            self.wf['channel_ready']={channel:True}
+            self.assertEqual(self.stages()['reply']['state'],'busy')
+            self.assertEqual(self.stages()['sdk']['state'],'error')
+
+    def test_partial_outage_and_unknown_address_are_not_all_green(self):
+        self.data['reply_routes']={'douyin':1,'qq':2}
+        self.wf['channel_ready']={'qq':False}
+        stage=self.stages()['reply']
+        self.assertEqual(stage['state'],'warn');self.assertIn('QQ',stage['detail'])
+        self.data['reply_routes']={'unknown':1}
+        self.assertEqual(self.stages()['reply']['state'],'blocked')
+
+    def test_idle_uses_actual_default_channel(self):
+        self.wf['sdk']['online']=False
+        self.wf['channel_ready']={'whale':True}
+        self.data['active_channel']='whale'
+        self.assertEqual(self.stages()['reply']['state'],'idle')
+
+    def test_snapshot_routes_and_malformed_comment_are_read_only(self):
+        import json
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            path=Path(folder)/'state.sqlite3'
+            db=sqlite3.connect(path)
+            db.executescript("CREATE TABLE live_tasks(id TEXT,status TEXT,raw_json TEXT); CREATE TABLE reply_outbox(task_id TEXT,status TEXT); CREATE TABLE shared_comment_outbox(status TEXT,created REAL,video_id TEXT,detail TEXT); CREATE TABLE channel_current(id INTEGER,channel TEXT);")
+            db.execute('INSERT INTO live_tasks VALUES(?,?,?)',('qq','done',json.dumps({'transport':'qq','reply_device':'qq:123456789:987654321'})))
+            db.execute("INSERT INTO reply_outbox VALUES('qq','pending')")
+            db.execute("INSERT INTO shared_comment_outbox VALUES('failed',0,'work','[]')")
+            db.execute("INSERT INTO channel_current VALUES(1,'whale')")
+            db.commit();db.close();before=path.read_bytes()
+            state=snapshot(path)
+            self.assertTrue(state['ok']);self.assertEqual(state['reply_routes'],{'qq':1})
+            self.assertEqual(state['active_channel'],'whale')
+            self.assertEqual(path.read_bytes(),before)
+
 if __name__=='__main__':unittest.main()

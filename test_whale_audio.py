@@ -35,6 +35,62 @@ class AudioTests(unittest.TestCase):
         self.db.commit()
         return task,token
 
+    def qq_context(self):
+        task=self.receive()
+        raw=json.loads(self.db.execute('SELECT raw_json FROM live_tasks WHERE id=?',(task,)).fetchone()[0])
+        raw.update(transport='qq',reply_device='qq:987654321:123456789')
+        with self.db:self.db.execute("UPDATE live_tasks SET raw_json=?,status='processing' WHERE id=?",(json.dumps(raw),task))
+        token=whale_voice.permit(self.db,task,'qq-session')
+        self.db.execute('CREATE TABLE chat_dispatch(task_id TEXT PRIMARY KEY,status TEXT,detail TEXT)')
+        self.db.execute('INSERT INTO chat_dispatch VALUES(?,?,?)',(task,'attempted',json.dumps({'provider':'astrbot','session_id':'qq-session'})))
+        self.db.commit()
+        return task,token
+
+    def test_qq_speech_caption_is_bound_and_queued_after_audio_once(self):
+        self.setup_audio();task,token=self.qq_context();caption='这是合成的原文。'
+        path=voice_captions.remember(self.db,token,wav(),caption)
+        self.assertEqual(whale_voice.known_text(self.db,task,path),caption)
+        from app import plugin_audio
+        with self.assertRaises(ValueError):plugin_audio.authorized(self.db,token)  # Late music hook keeps its old scope.
+        reply_batch.finish(self.db,task,[{'type':'audio','path':path,'text':caption}])
+        self.assertEqual(self.db.execute('SELECT kind,text,seq FROM reply_outbox ORDER BY seq').fetchall(),
+                         [('audio',caption,0),('text',caption,1)])
+        with self.assertRaises(ValueError):reply_batch.finish(self.db,task,[{'type':'audio','path':path,'text':caption}])
+
+    def test_qq_adjacent_original_text_is_not_sent_before_audio_or_twice(self):
+        self.setup_audio();task,token=self.qq_context();caption='原文'
+        path=voice_captions.remember(self.db,token,wav(),caption)
+        reply_batch.finish(self.db,task,[{'type':'text','text':caption},{'type':'audio','path':path,'text':caption},{'type':'text','text':caption}])
+        self.assertEqual(self.db.execute('SELECT kind,text FROM reply_outbox ORDER BY seq').fetchall(),[('audio',caption),('text',caption)])
+
+    def test_qq_audio_without_known_original_does_not_invent_text(self):
+        path=self.setup_audio();task,_=self.qq_context()
+        reply_batch.finish(self.db,task,[{'type':'audio','path':path}])
+        self.assertEqual(self.db.execute('SELECT kind FROM reply_outbox').fetchall(),[('audio',)])
+
+    def test_qq_two_audio_parts_each_keep_their_following_original(self):
+        self.setup_audio();task,token=self.qq_context();caption='相同原文'
+        path=voice_captions.remember(self.db,token,wav(),caption)
+        reply_batch.finish(self.db,task,[{'type':'audio','path':path,'text':caption},{'type':'audio','path':path,'text':caption}])
+        self.assertEqual(self.db.execute('SELECT kind FROM reply_outbox ORDER BY seq').fetchall(),[('audio',),('text',),('audio',),('text',)])
+
+    def test_qq_proactive_caption_requires_current_generating_job(self):
+        from app import diary_proactive
+        import time
+        self.setup_audio();task,token=self.qq_context()
+        raw=json.loads(self.db.execute('SELECT raw_json FROM live_tasks WHERE id=?',(task,)).fetchone()[0])
+        raw.update(direction='outgoing',origin='diary_proactive')
+        diary_proactive.schema(self.db);dest={'session_id':'qq-session','config_id':'default'}
+        with self.db:
+            self.db.execute('UPDATE live_tasks SET raw_json=? WHERE id=?',(json.dumps(raw),task))
+            self.db.execute('INSERT INTO diary_proactive_jobs(id,umo,created,expires,status,destination,route,decision) VALUES(?,?,?,?,?,?,?,?)',
+                (task,'owner',time.time(),time.time()+100,'generating',json.dumps(dest),'{}','{}'))
+        with patch.object(diary_proactive,'target',return_value=dest):
+            path=voice_captions.remember(self.db,token,wav(),'主动语音原文')
+            self.assertEqual(whale_voice.known_text(self.db,task,path),'主动语音原文')
+        with patch.object(diary_proactive,'target',return_value=None):
+            with self.assertRaises(ValueError):voice_captions.remember(self.db,token,wav(),'不能写入')
+
     def test_late_plugin_audio_commits_once_and_preserves_source(self):
         from app import plugin_audio
         self.setup_audio();task,token=self.late_context()

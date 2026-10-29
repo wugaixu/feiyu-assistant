@@ -57,7 +57,8 @@ def capture(page,task,message):
             else:record['files']=[result]
         elif kind=='video':
             from app.sdk_video import download as download_video
-            record['files']=[download_video(message.get('sdk_message_id'),directory)]
+            kwargs={'group_id':message['group_id']} if message.get('is_group') else {}
+            record['files']=[download_video(message.get('sdk_message_id'),directory,**kwargs)]
             record['media_type']='video'
         elif kind=='image':
             image=content.get('image') or {}

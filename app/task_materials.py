@@ -12,7 +12,7 @@ def catalog(records,context):
     images=visual_delivery.inputs(records,limit=None,max_total=None)
     roots=[r.resolve() for kind in ('media','analysis','content','context') for r in resource_storage.resource_dirs(kind)]
     context=Path(context).resolve()
-    candidates=[context]
+    candidates=[context,context.with_name('instructions.md')]
     for record in records:
         audio=record.get('audio_analysis') or record.get('transcript') or {}
         candidates.extend(audio.get(k) for k in ('text_path','path') if audio.get(k))

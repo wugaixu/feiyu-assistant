@@ -1,0 +1,22 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync('integrations/whale_gateway/chat-page.html','utf8');
+const start=html.indexOf('  var managerLoaded=false'),end=html.indexOf('  function closePopovers()',start);
+const events={},timers=new Map();let tick=0,navigations=0;
+const elements=new Map();
+const element=id=>{if(!elements.has(id))elements.set(id,{hidden:true,style:{},addEventListener(type,fn){events[id+':'+type]=fn;},insertBefore(n){elements.set(n.id,n);}});return elements.get(id);};
+const frame=element('managerFrame');
+Object.defineProperty(frame,'src',{set(v){navigations++;this.url=v;}});
+frame.contentWindow={postMessage(){}};
+Object.defineProperty(frame.contentWindow,'location',{get(){throw Error('opaque WebView error origin');}});
+const c={document:{getElementById:element,createElement:()=>({style:{}})},window:{addEventListener(t,fn){events[t]=fn;}},location:{origin:'https://test.invalid'},history:{state:{whaleManager:true}},deviceId:'test',closePopovers(){},setVoiceMode(){},
+setTimeout(fn){timers.set(++tick,fn);return tick;},clearTimeout(id){timers.delete(id);},Date,encodeURIComponent};
+vm.createContext(c);vm.runInContext(html.slice(start,end),c);
+c.openManager();assert.equal(navigations,1);assert.match(element('managerNotice').textContent,/正在连接/);
+[...timers.values()][0]();assert.equal(c.managerLoaded,false);assert.match(element('managerNotice').textContent,/未能加载/);
+c.openManager();assert.equal(navigations,2,'reopening failed frame must retry');
+events.message({origin:c.location.origin,source:frame.contentWindow,data:{type:'whale-manager-ready'}});
+assert.equal(c.managerReady,true);assert.equal(element('managerNotice').hidden,true);
+c.closeManager(true);c.openManager();assert.equal(navigations,2,'healthy frame is preserved');
+c.managerReady=false;events['managerReload:click']();assert.equal(navigations,3,'retry must not touch opaque error location');
+events.message({origin:'https://evil.invalid',source:frame.contentWindow,data:{type:'whale-manager-ready'}});assert.equal(c.managerReady,false);
+console.log('Manager frame: failed loads retry, opaque errors recover, healthy pages persist, foreign ready signals rejected');

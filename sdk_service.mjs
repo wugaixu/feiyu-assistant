@@ -6,6 +6,7 @@ import {join,relative,isAbsolute,dirname} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {installInbox} from './sdk_inbox.mjs';
 import {validatedWork} from './sdk_share.mjs';
+import {groupSdk} from './group_sdk.mjs';
 const root='__RUNTIME_ROOT__';
 const project=dirname(fileURLToPath(import.meta.url));
 const {createClient,segment}=await import(pathToFileURL(join(root,'node_modules/douyin-im/lib/index.js')).href);
@@ -14,7 +15,8 @@ const ownerUid='__OWNER_UID__';
 const state={ok:false,online:false,uid:null,nickname:null,note:'starting',updated_at:0};
 function publish(patch){Object.assign(state,patch,{updated_at:Date.now()/1000});writeFileSync(join(root,'sdk-sender-status.json'),JSON.stringify(state,null,2));}
 const client=createClient({dataDir});
-const inbox=installInbox(client,dataDir,ownerUid);
+const groups=groupSdk(join(root,'assistant.sqlite3'),'__ACCOUNT_UID__');
+const inbox=installInbox(client,dataDir,ownerUid,{allowedGroup:groups.allowed});
 client.on('system.online',({account})=>publish({ok:true,online:true,uid:account.uid,nickname:account.nickname,note:''}));
 client.on('system.offline',()=>publish({ok:false,online:false,note:'offline'}));
 client.on('system.reconnecting',()=>publish({ok:false,online:false,note:'reconnecting'}));
@@ -38,15 +40,31 @@ const server=createServer((req,res)=>{
   const reply=(status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value,(_,v)=>typeof v==='bigint'?String(v):v));};
   try{if(inbox(req,res))return;}catch{reply(500,{ok:false,error:'inbox_unavailable'});return;}
   const url=req.url?.split('?')[0];
-  if(req.method==='GET'&&url==='/health'){reply(200,{...state,capabilities:{share:true}});return;}
-  if(req.method!=='POST'||!['/send','/send-image','/send-share','/resolve-video'].includes(url)){reply(404,{ok:false});return;}
+  if(req.method==='GET'&&url==='/health'){reply(200,{...state,capabilities:{share:true,group_chat:1}});return;}
+  if(req.method==='GET'&&url==='/groups'){
+    if(!state.online||state.uid!=='__ACCOUNT_UID__'){reply(503,{ok:false});return;}
+    const gid=new URL(req.url,'http://127.0.0.1').searchParams.get('group_id');
+    (gid?groups.members(client.pickAccount(),gid):groups.list(client.pickAccount()).then(value=>({groups:value})))
+      .then(value=>reply(200,{ok:true,...value})).catch(()=>reply(503,{ok:false,error:'groups_unavailable'}));return;
+  }
+  if(req.method!=='POST'||!['/send','/send-image','/send-share','/resolve-video','/group-send'].includes(url)){reply(404,{ok:false});return;}
   let raw='';req.on('data',chunk=>{raw+=chunk;if(raw.length>20000)req.destroy();});
   req.on('end',async()=>{
     try{
       const body=JSON.parse(raw);
       if(!state.online||state.uid!=='__ACCOUNT_UID__')throw Error('Expected SDK account offline');
+      if(url==='/group-send'){
+        const result=await groups.send(client.pickAccount(),body.outbox_id,row=>{
+          if(row.kind==='image')return segment.image(imageBytes(row));
+          if(row.kind==='share'){const work=validatedWork(JSON.parse(row.work_json));return work.imageCount?segment.photos(work):segment.share(work);}
+          if(row.kind!=='text'||typeof row.text!=='string'||!row.text.trim()||row.text.length>1500)throw Error('Invalid group reply');
+          return row.text;
+        });
+        const ok=Number(result.statusCode)===0&&String(result.serverMessageId??'0')!=='0'&&(result.checkCode==null||Number(result.checkCode)===0);
+        reply(200,{...result,ok});return;
+      }
       if(url==='/resolve-video'){
-        const video=inbox.lookupVideo(body.message_id);
+        const video=inbox.lookupVideo(body.message_id,body.group_id??null);
         const address=await client.pickAccount().im.resolveVideoUrl(video.tkey);
         // Recipient-provided IM attachment key, returned only over loopback.
         reply(200,{ok:true,url:address.mainUrl,key:video.skey});return;

@@ -1,7 +1,7 @@
 """Compile a relocatable deployment from this clean source snapshot; never start services."""
 import argparse,json,os,re,secrets,shutil,sys
 from pathlib import Path
-VERSION='0.2.0'
+VERSION='0.3.0'
 REPO=Path(__file__).resolve().parent
 
 def safe_path(value):
@@ -39,10 +39,11 @@ def configure(cfg):
     defaults={
       'inbound-policy.json':{'standalone':True,'enabled':True,'transport':'sdk'},
       'reply-policy.json':{'drop_process_narration':False},
+      'qq-channel.json':{'enabled':False,'owner_id':'','account_id':'','port':8796,'napcat_dir':'','qq_exe':''},
       'dm-policy.json':{'enabled':True,'min_send_gap_seconds':1},
       'shared-comment-policy.json':{'enabled':False,'daily_limit':10,'mention_owner':False},
       'video-round-config.json':{'enabled':False,'auto_comment':False},
-      'autonomy-policy.json':{'browse_enabled':False,'proactive_enabled':False},
+      'autonomy-policy.json':{'browse_enabled':False},
       'local-image.json':{'enabled':False,'idle_minutes':10},
       'gpt-sovits.json':{'enabled':False,'voice_id':'dafeiyu','idle_minutes':5},
       'whale-channel.json':{'installed':True,'standalone':True,'enabled':True,'remote_management':False,'devices':[],'network':{'mode':'disabled'}},
@@ -54,6 +55,10 @@ def configure(cfg):
         if not p.exists():p.write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding='utf-8')
     secret=runtime/'whale-bridge-secret.txt'
     if not secret.exists():secret.write_text(secrets.token_hex(32),encoding='utf-8')
+    # Independent loopback credentials; keep existing operator-provided values.
+    for name in ('qq-onebot-secret.txt','qq-webui-secret.txt'):
+        target=runtime/name
+        if not target.exists():target.write_text(secrets.token_hex(32),encoding='utf-8')
     for folder in ('tests','outgoing-images','outgoing-audio','backups','task-context','media','tools','manual-images/output'):(runtime/folder).mkdir(parents=True,exist_ok=True)
     (runtime/'deployment.json').write_text(json.dumps({**cfg,'installed':str(installed),'version':VERSION},ensure_ascii=False,indent=2),encoding='utf-8')
     print('Prepared:',installed)

@@ -26,10 +26,10 @@ bubble.emit('pointerdown',{isPrimary:true,clientX:0,clientY:0});callback();asser
 let suppressed=false;bubble.emit('click',{preventDefault(){},stopImmediatePropagation(){suppressed=true;}});assert.equal(suppressed,true);
 // Opening and closing management preserves its iframe; foreign messages cannot close it.
 const nodes=new Map(),listeners={},history={state:null,pushState(v){this.state=v;},back(){this.state=null;}};
-function element(id){if(!nodes.has(id)){const e=target();e.hidden=true;e.dataset={};e.contentWindow={postMessage(){}};Object.defineProperty(e,'src',{set(v){e.loads=(e.loads||0)+1;e.url=v;}});nodes.set(id,e);}return nodes.get(id);}
-const manage={document:{getElementById:element},window:{addEventListener(k,f){listeners[k]=f;}},closePopovers(){},setVoiceMode(){},deviceId:'fixture',encodeURIComponent,history,location:{origin:'http://fixture',href:'http://fixture/wechat'}};
+function element(id){if(!nodes.has(id)){const e=target();e.hidden=true;e.dataset={};e.style={};e.insertBefore=()=>{};e.contentWindow={postMessage(){}};Object.defineProperty(e,'src',{set(v){e.loads=(e.loads||0)+1;e.url=v;}});nodes.set(id,e);}return nodes.get(id);}
+const manage={setTimeout:()=>1,clearTimeout(){},document:{getElementById:element,createElement:()=>({style:{}})},window:{addEventListener(k,f){listeners[k]=f;}},closePopovers(){},setVoiceMode(){},deviceId:'fixture',encodeURIComponent,history,location:{origin:'http://fixture',href:'http://fixture/wechat'}};
 vm.createContext(manage);vm.runInContext(section('  var managerLoaded=false','  function closePopovers(){'),manage);
-manage.openManager();manage.closeManager();manage.openManager();assert.equal(element('managerFrame').loads,1);assert.equal(element('managerOverlay').hidden,false);
+manage.openManager();listeners.message({origin:'http://fixture',source:element('managerFrame').contentWindow,data:{type:'whale-manager-ready'}});manage.closeManager();manage.openManager();assert.equal(element('managerFrame').loads,1);assert.equal(element('managerOverlay').hidden,false);
 listeners.message({origin:'http://other',source:element('managerFrame').contentWindow,data:{type:'whale-close-manager'}});assert.equal(element('managerOverlay').hidden,false);
 listeners.message({origin:'http://fixture',source:element('managerFrame').contentWindow,data:{type:'whale-close-manager'}});assert.equal(element('managerOverlay').hidden,true);
 assert.doesNotMatch(source,/<audio\b|id="mascot"|id="balanceText"/);

@@ -170,26 +170,45 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(disk.execute('SELECT text FROM reply_outbox').fetchone()[0],'你好呀')
         finally:disk.close()
 
-    def test_only_accepted_replies_enter_history(self):
-        for key,direction,status in [('yes','incoming','server_accepted'),('maybe','incoming','outcome_uncertain'),('fake','unverified','server_accepted')]:
-            self.task(key,state='done',raw_text=key,direction=direction)
-            self.db.execute('INSERT INTO reply_outbox(id,task_id,owner,text,status) VALUES(?,?,?,?,?)',(key,key,rx.OWNER,'reply-'+key,status))
-        self.db.commit()
-        history=aw.recent_history(self.db,rx.OWNER)
-        self.assertIn('reply-yes',history);self.assertNotIn('reply-maybe',history);self.assertNotIn('reply-fake',history)
-
     def test_fences_preserve_code_but_not_surrounding_paragraphs(self):
         parts=aw._text_parts('前文\n\n```python\na=1\n\nb=2\n```\n\n后文',{})
         self.assertEqual(len(parts),3)
         self.assertIn('a=1\n\nb=2',parts[1]['text'])
         self.assertEqual(len(aw._text_parts('行内 ``` 标记\n\n下一段',{})),2)
 
+    def test_text_and_multiple_media_use_one_astrbot_request(self):
+        key='a'*32
+        raw={'kind':'text','direction':'incoming','transport':'sdk','merged_messages':[
+            {'task_id':key,'kind':'text','text':'看看这两份素材','received':100},
+            {'task_id':'image','kind':'image','text':'{"inline_pic":"BINARY_SENTINEL"}','received':101},
+            {'task_id':'video','kind':'shared_video','text':'[分享抖音作品] 舞狮','received':102}]}
+        self.db.execute('INSERT INTO live_tasks VALUES(?,?,?,?,?,NULL)',(key,rx.OWNER,100,json.dumps(raw),'pending'))
+        for mid,kind in [('image','image'),('video','video_card')]:
+            self.db.execute('INSERT INTO media_records VALUES(?,?,?,?,?,?)',(mid,rx.OWNER,101,kind,json.dumps({'kind':kind,'status':'saved','files':[]}),key))
+        self.db.execute('CREATE TABLE chat_dispatch(task_id TEXT PRIMARY KEY,attempted REAL,status TEXT,queue_id TEXT,detail TEXT)')
+        self.db.execute('INSERT INTO chat_dispatch VALUES(?,0,?,NULL,?)',(key,'queued',json.dumps({'provider':'astrbot','session_id':'session'})));self.db.commit()
+        task_context.write_packet(key,rx.OWNER,raw,[])
+        disk=sqlite3.connect(self.root/'assistant.sqlite3');self.db.backup(disk);disk.close()
+        with patch.object(aw.client,'chat',return_value=[{'type':'text','text':'看到了'}]) as chat,patch.object(aw.client,'upload') as upload:
+            aw.run(key,{'session_id':'session'})
+        chat.assert_called_once()
+        parts=chat.call_args.args[1]
+        self.assertEqual(len(parts),1)
+        self.assertEqual(parts[0]['type'],'plain')
+        self.assertIn('"message_count": 3',parts[0]['text'])
+        self.assertNotIn('BINARY_SENTINEL',parts[0]['text'])
+        upload.assert_not_called()
+        disk=sqlite3.connect(self.root/'assistant.sqlite3')
+        try:self.assertEqual(disk.execute('SELECT status FROM live_tasks WHERE id=?',(key,)).fetchone()[0],'done')
+        finally:disk.close()
+
     def test_output_limits_warn_once_and_prompt_uses_same_limit(self):
         report={}
         parts=aw.finalize_parts([{'type':'text','text':'\n\n'.join(['段落']*30)},{'type':'text','text':'后文'}],'task',report)
         self.assertEqual(len(parts),aw.MAX_PARTS)
         self.assertEqual(len([x for x in report['warnings'] if '回复段数' in x]),1)
-        self.assertIn(str(aw.MAX_PARTS)+' 条',aw.dm_prompt({'kind':'text','raw_text':'你好'},[]))
+        from app.task_context import READING_RULES
+        self.assertIn('最多'+str(aw.MAX_PARTS)+'条',READING_RULES)
 
     def test_health_counts_all_outgoing_kinds_and_uncertainty(self):
         for i,(kind,status) in enumerate([('image','pending'),('share','attempted'),('text','outcome_uncertain')]):

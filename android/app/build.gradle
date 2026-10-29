@@ -16,16 +16,16 @@ android {
         applicationId "com.dsh.wechat"
         minSdk 24
         targetSdk 35
-        versionCode 12
-        versionName "1.5.2"
+        versionCode 13
+        versionName "1.5.3"
     }
 
     buildTypes {
         debug {
-            // Configure your own release signing locally. Do not commit keys.
+            // Configure signing locally; do not commit keys.
         }
         release {
-            // Configure your own release signing locally. Do not commit keys.
+            // Configure signing locally; do not commit keys.
             minifyEnabled false
         }
     }

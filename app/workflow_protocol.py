@@ -5,9 +5,12 @@ from app.live_service import ROOT
 VERSION=4
 
 
-def astrbot_reader():
+def astrbot_reader(instance_id='default'):
     try:
-        value=json.loads((ROOT/'workflow-reader-state.json').read_text(encoding='utf-8'))
+        from app.astrbot_instances import info
+        info(instance_id)
+        filename='workflow-reader-state.json' if instance_id=='default' else 'workflow-reader-'+instance_id+'-state.json'
+        value=json.loads((ROOT/filename).read_text(encoding='utf-8'))
         age=time.time()-value['updated_at']
         ready=value.get('protocol_version')==VERSION and 0<=age<=30
         return {'ready':ready,'protocol_version':value.get('protocol_version'),'required_version':VERSION,

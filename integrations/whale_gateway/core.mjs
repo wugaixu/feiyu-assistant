@@ -8,6 +8,7 @@ import { homedir, networkInterfaces } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { inspectPcmWav } from './wav.mjs'
 import { LocalSpeech } from './speech.mjs'
+import {probePublicIngress} from './public-health.mjs'
 import { VoiceStore, voiceMessageId } from './voice.js'
 import { createAssistantBridge } from '../whale_assistant_bridge.mjs'
 import { pathToFileURL } from 'node:url'
@@ -1417,7 +1418,7 @@ export function startGateway(host, config = {}) {
         autoTunnel,
         ...(publicBaseUrl !== undefined ? { publicBaseUrl } : {}),
         tunnel: tunnel.info(),
-        ...(funnelEnabled ? { funnel: { enabled: funnelState.enabled, error: funnelState.error, url: publicBaseUrl } } : {}),
+        ...(funnelEnabled ? { funnel: { enabled: funnelState.enabled, error: funnelState.error, url: publicBaseUrl, publicReachable:funnelState.publicReachable, publicState:funnelState.publicState, checkedAt:funnelState.checkedAt } } : {}),
         deviceCount: service.deviceCount(),
       })
       return
@@ -1693,29 +1694,29 @@ export function startGateway(host, config = {}) {
 
   let publicDnsTimer = undefined
 
-  async function publicDnsPresent(host) {
-    // When the host was offline, Tailscale withdraws the Funnel ingress DNS
-    // record. Ask an external resolver: the local MagicDNS answer always works.
-    try {
-      const response = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(host) + '&type=A',
-        { signal: AbortSignal.timeout(8000) })
-      if (!response.ok) return true
-      const value = await response.json()
-      return Array.isArray(value.Answer) && value.Answer.some((item) => item && item.type === 1
-        && /^\d+\.\d+\.\d+\.\d+$/.test(String(item.data || '')))
-    } catch { return true }
-  }
-
+  let publicProbeRunning=false;
   function watchPublicDns(port) {
-    if (publicDnsTimer !== undefined) return
-    publicDnsTimer = setInterval(async () => {
-      const host = String(publicBaseUrl || '').replace(/^https:\/\//, '').replace(/\/.*$/, '')
-      if (host === '') return
-      if (await publicDnsPresent(host)) return
-      console.log('wechat-chat: 公网域名解析缺失，重新发布 Funnel')
-      await applyFunnel(port)
-    }, 10 * 60 * 1000)
-    publicDnsTimer.unref?.()
+    if (publicDnsTimer !== undefined) return;
+    const check=async()=>{
+      if(publicProbeRunning)return;
+      const host=String(publicBaseUrl||'').replace(/^https:\/\//,'').replace(/\/.*$/,'');
+      if(!host)return;
+      publicProbeRunning=true;
+      try {
+        const value=await probePublicIngress(host);
+        funnelState.publicReachable=value.reachable;
+        funnelState.publicState=value.state;
+        funnelState.checkedAt=Date.now()/1000;
+        if(value.state==='dns_missing')await applyFunnel(port);
+        if(value.reachable===false)funnelState.error=value.state==='dns_missing'?'公网DNS缺失，已尝试重新发布':'公网TLS入口断开；本地在线不等于公网可用，请检查Tailscale服务';
+        else if(value.reachable===true)funnelState.error=undefined;
+        const path=join(home,'public-health.json'),temp=path+'.tmp';
+        writeFileSync(temp,JSON.stringify({...value,checked_at:funnelState.checkedAt}));renameSync(temp,path);
+      } finally {publicProbeRunning=false;}
+    };
+    publicDnsTimer=setInterval(()=>{void check().catch(()=>{});},60000);
+    publicDnsTimer.unref?.();
+    void check().catch(()=>{});
   }
 
   async function applyFunnel(port) {

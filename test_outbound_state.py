@@ -51,4 +51,18 @@ class OutboundStateTests(unittest.TestCase):
         self.assertTrue(retry_decision(0,result,{'retry_rejected':True,'retry_max':1})['retry'])
         self.assertFalse(retry_decision(1,result,{'retry_rejected':True,'retry_max':1})['retry'])
 
+class PendingRouteTests(unittest.TestCase):
+    def test_pending_qq_and_whale_use_task_route_without_receipts(self):
+        with tempfile.TemporaryDirectory(dir=cs.ROOT) as directory:
+            path=Path(directory)/'db.sqlite3';db=sqlite3.connect(path)
+            db.executescript("CREATE TABLE live_tasks(id TEXT,raw_json TEXT); CREATE TABLE reply_outbox(id TEXT,task_id TEXT,text TEXT,status TEXT,detail TEXT,kind TEXT);")
+            for channel,device in [('qq','qq:123456789:987654321'),('whale','a'*64)]:
+                db.execute('INSERT INTO live_tasks VALUES(?,?)',(channel,json.dumps({'transport':channel,'reply_device':device})))
+                db.execute('INSERT INTO reply_outbox VALUES(?,?,?,?,?,?)',(channel,channel,'hello','pending',None,'text'))
+            db.commit();db.close();before=path.read_bytes()
+            with patch.object(cs,'ASSISTANT_DB',path),patch.object(cs,'ROOT',Path(directory)):
+                items=cs.outbound_state()['items']
+            self.assertEqual({x['channel'] for x in items},{'qq','whale'})
+            self.assertEqual(path.read_bytes(),before)
+
 if __name__=='__main__':unittest.main()

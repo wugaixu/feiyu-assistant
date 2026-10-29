@@ -3,14 +3,18 @@ import hashlib,json,re,subprocess,urllib.request
 from pathlib import Path
 from app.media_capture import ROOT,resource_bytes,validate_video
 
-def download(message_id,directory):
+def download(message_id,directory,group_id=None):
     if not re.fullmatch(r'\d{1,26}',str(message_id)):raise ValueError('Invalid SDK message ID')
     directory=Path(directory).resolve()
     from app.resource_storage import media_output_allowed
     if not media_output_allowed(directory,ROOT):raise ValueError('Output outside approved media directories')
     directory.mkdir(parents=True,exist_ok=True)
+    body={'message_id':str(message_id)}
+    if group_id is not None:
+        if not isinstance(group_id,str) or not re.fullmatch(r'\d{1,26}',group_id):raise ValueError('Invalid group ID')
+        body['group_id']=group_id
     request=urllib.request.Request('http://127.0.0.1:8791/resolve-video',
-        data=json.dumps({'message_id':str(message_id)}).encode('utf-8'),
+        data=json.dumps(body).encode('utf-8'),
         headers={'Content-Type':'application/json'},method='POST')
     with urllib.request.urlopen(request,timeout=20) as response:value=json.load(response)
     if not value.get('ok'):raise ValueError('SDK attachment resolution failed')

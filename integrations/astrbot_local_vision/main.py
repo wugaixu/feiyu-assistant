@@ -23,7 +23,7 @@ TOOL='workflow_read_image'
 TOOLS=(TOOL,'workflow_read_text','workflow_comment')
 
 
-@register('workflow_local_vision','Local workflow','统一读取本轮资料包、文本和图片，不向用户重复发图','2.0.0')
+@register('workflow_local_vision','Local workflow','统一素材阅读与评论，兼容私聊和群聊','2.3.0')
 class LocalVision(Star):
     def __init__(self,context,config=None):
         super().__init__(context)
@@ -51,7 +51,14 @@ class LocalVision(Star):
                 for name in TOOLS:req.func_tool.remove_tool(name)
             req.system_prompt+='\n核对任务、领取、读资料、看图都是后台步骤，不要向主人播报流程，也不要复述指令原文；只输出最终答复。\n'
             return
-        req.system_prompt+='\n本轮先用 workflow_read_text(path,offset,limit) 读取context_file，next_offset非空时继续；图片用 workflow_read_image(path)。读取规则与本轮公共资料包一致。核对、领取、读资料、看图都是内部步骤，不要在回复中说明你在核对、读资料或调用工具，也不要复述指令；只输出最终答复。工具返回的图片只供分析，不是生成结果，不要转发缓存。不输出许可或内部路径。读取失败如实说明。\n'
+        def source_scope():
+            with sqlite3.connect(ROOT/'assistant.sqlite3',timeout=10) as db:
+                return local_vision.scope_guidance(db,token)
+        try:
+            req.system_prompt+='\n'+await asyncio.to_thread(source_scope)+'\n'
+        except (ValueError,sqlite3.Error):
+            pass  # Expired/non-workflow tokens do not grant cross-source context.
+        req.system_prompt+='\n用 workflow_read_text 读取本轮 instructions_file 的规则，再读 context_file；图片用 workflow_read_image。不要播报内部步骤或输出许可。\n'
 
     @llm_tool(name='workflow_read_text')
     async def read_text(self,event,path:str,offset:int=0,limit:int=8000):

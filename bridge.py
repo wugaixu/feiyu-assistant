@@ -60,6 +60,7 @@ def main():
                 text=summary(raw)
                 print(json.dumps({'id':row[0],'owner':row[1],'status':row[3],
                     'kind':raw.get('kind'),'text':text[:300],'text_truncated':len(text)>300,
+                    'source':{k:raw.get(k) for k in ('group_id','group_name','sender_uid','sender_name')} if raw.get('is_group') else None,
                     'context_file':str(context) if context.exists() else None},ensure_ascii=False))
                 return
             media = [json.loads(r[0]) for r in db.execute('SELECT record_json FROM media_records WHERE attached_to=? OR id=?', (args.id,args.id))]

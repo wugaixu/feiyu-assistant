@@ -69,3 +69,12 @@ def comment(db,token,video_id,text,evidence):
     row=db.execute('SELECT task_id FROM local_vision_permits WHERE token=?',(token,)).fetchone()
     from app.shared_comments import enqueue
     return enqueue(db,row[0],video_id,{'text':text,'evidence':evidence})
+
+
+
+def scope_guidance(db,token):
+    """Only current source identity, never a claim that history was injected."""
+    _permission(db,token)
+    row=db.execute('SELECT t.raw_json FROM local_vision_permits p JOIN live_tasks t ON t.id=p.task_id WHERE p.token=?',(token,)).fetchone()
+    return ('当前是群聊，按资料包核验群和发言人；不要泄露主人私聊或其他群内容。' if json.loads(row[0]).get('is_group') else
+            '当前是已核验主人私聊，沿用所选会话上下文；本轮不额外注入历史。')

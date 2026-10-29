@@ -87,12 +87,13 @@ public class MainActivity extends AppCompatActivity {
     private int voiceGeneration = 0;
     // DNS 被运营商污染时会间歇性 NXDOMAIN；对可恢复错误自动重试，别立刻放弃。
     private static final int LOAD_MAX_RETRIES = 6;
-    // 启动时加载的是"上次保存的地址"，dsh 重启后该隧道已不存在，重试无意义：少量重试后直接回落扫码页
-    private static final int LOAD_MAX_RETRIES_STARTUP = 2;
+    // 固定 Tailscale 地址在网络切换时也可能临时失败；启动和扫码均有界重试并保留连接。
+    private static final int LOAD_MAX_RETRIES_STARTUP = 6;
     private int loadRetries = 0;
     private boolean loadFromScan = false;
     private boolean loadHadError = false;
     private String lastLoadUrl = null;
+    private boolean recoveryShowing = false;
     private String voiceDeviceId = "";
     private String voiceOrigin = "";
     private String voiceCookie = "";
@@ -184,15 +185,10 @@ public class MainActivity extends AppCompatActivity {
                 if (isRetriableLoadError(code) && loadRetries < limit && lastLoadUrl != null) {
                     loadRetries += 1;
                     final String retryUrl = lastLoadUrl;
-                    webView.postDelayed(() -> { if (lastLoadUrl != null) webView.loadUrl(retryUrl); }, 1500);
+                    webView.postDelayed(() -> { if (!isFinishing() && !isDestroyed() && loadHadError && retryUrl.equals(lastLoadUrl)) webView.loadUrl(retryUrl); }, Math.min(8000, 1500 * loadRetries));
                     return;
                 }
-                if (code == WebViewClient.ERROR_HOST_LOOKUP) {
-                    Toast.makeText(MainActivity.this, "该地址已失效，请重新扫码配对", Toast.LENGTH_LONG).show();
-                } else {
-                    Toast.makeText(MainActivity.this, "连接失败：" + error.getDescription(), Toast.LENGTH_LONG).show();
-                }
-                backToFirstRun();
+                showConnectionRecovery("连接电脑失败：" + error.getDescription());
             }
 
             @Override
@@ -200,7 +196,7 @@ public class MainActivity extends AppCompatActivity {
                 if (!request.isForMainFrame() || errorResponse.getStatusCode() < 400) return;
                 loadHadError = true;
                 Toast.makeText(MainActivity.this, "服务器返回 HTTP " + errorResponse.getStatusCode(), Toast.LENGTH_LONG).show();
-                backToFirstRun();
+                showConnectionRecovery("服务器暂时不可用（HTTP " + errorResponse.getStatusCode() + "）");
             }
 
             @Override
@@ -208,7 +204,8 @@ public class MainActivity extends AppCompatActivity {
                 if (url.startsWith("file://")) { nativeVoiceButton.setVisibility(android.view.View.GONE); return; }
                 // 只有真正加载成功才清零重试计数：失败时 WebView 也会回调这里，
                 // 若无条件清零会导致"失败→清零→重试"死循环，永远回不到扫码页。
-                if (!loadHadError) { loadRetries = 0; loadFromScan = false; }
+                if (loadHadError) return;
+                loadRetries = 0; loadFromScan = false;
                 // 进入远程页后清空历史：返回键直接退出，不再回到引导页
                 view.clearHistory();
                 // Persist the pairing cookie across process death and APK updates.
@@ -240,22 +237,46 @@ public class MainActivity extends AppCompatActivity {
         if (origin == null || origin.isEmpty()) {
             webView.loadUrl("file:///android_asset/firstrun.html");
         } else {
-            // 已配对：直接进聊天页。这是"上次保存的地址"，dsh 重启后隧道已换地址会解析失败，
-            // 因此只做少量重试便回落到扫码页。
+            // 固定公网地址跨服务重启保留；网络失败不删除保存地址或配对。
             loadFromScan = false;
             loadRetries = 0;
             webView.loadUrl(origin + "/wechat?client=" + clientId());
         }
     }
 
-    /** 页面加载失败（公网地址失效/网络不可达）时回到引导页重新扫码。 */
-    private void backToFirstRun() {
+    /** Network errors preserve the stable server address and all pairing cookies. */
+    private void showConnectionRecovery(String reason) {
+        if (isFinishing() || isDestroyed() || recoveryShowing) return;
+        recoveryShowing = true;
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("暂时连接不上电脑")
+                .setMessage(reason + "\n\n已保留服务器地址和配对。可以切换 Wi-Fi / 移动网络后重试，无需因为临时断线重新扫码。")
+                .setPositiveButton("重试连接", (dialog, which) -> retryConnection())
+                .setNeutralButton("重新扫码", (dialog, which) -> startScan())
+                .setNegativeButton("稍后", null)
+                .setOnDismissListener(dialog -> recoveryShowing = false)
+                .show();
+    }
+
+    private void retryConnection() {
+        String saved = getSharedPreferences("dsh_wechat", MODE_PRIVATE).getString("origin", "");
+        if (saved.isEmpty()) {
+            if (lastLoadUrl == null) return;
+            loadRetries = 0;
+            webView.loadUrl(lastLoadUrl);
+            return;
+        }
         loadRetries = 0;
         loadFromScan = false;
-        loadHadError = false;
-        lastLoadUrl = null;
-        getSharedPreferences("dsh_wechat", MODE_PRIVATE).edit().remove("origin").apply();
-        webView.loadUrl("file:///android_asset/firstrun.html");
+        webView.loadUrl(saved + "/wechat?client=" + clientId());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView == null) return;
+        if (loadHadError && !recoveryShowing) retryConnection();
+        else runJs("window.wechatReconnect && window.wechatReconnect();");
     }
 
     /* JS bridge used by the WeChat chat page and the first-run page. */
@@ -522,7 +543,8 @@ public class MainActivity extends AppCompatActivity {
         return errorCode == WebViewClient.ERROR_HOST_LOOKUP
                 || errorCode == WebViewClient.ERROR_CONNECT
                 || errorCode == WebViewClient.ERROR_TIMEOUT
-                || errorCode == WebViewClient.ERROR_IO;
+                || errorCode == WebViewClient.ERROR_IO
+                || errorCode == WebViewClient.ERROR_UNKNOWN; // Includes Chromium ERR_CONNECTION_CLOSED.
     }
 
     private static String normalizedOrigin(String raw) {

@@ -8,6 +8,7 @@ export const deviceHash=device=>createHash('sha256').update(device).digest('hex'
 export const allowedManage=(method,path)=>{
   const get=['/','/favicon.ico','/api/overview','/api/threads','/api/agents/dsh','/api/agents/astrbot','/api/activity','/api/tasks','/api/outbound','/api/comments','/api/comment-login','/api/storage','/api/channels','/api/app/ping'];
   const post=['/api/target','/api/agent','/api/astrbot/session','/api/policy','/api/activity','/api/channels','/api/local-image'];
+  if((method==='GET'||method==='POST')&&path==='/api/groups')return true;
   return (method==='GET'?get:method==='POST'?post:[]).includes(path);
 };
 export function createAssistantBridge(root=ROOT,{port=8793}={}){

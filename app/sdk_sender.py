@@ -50,7 +50,7 @@ def send(text, timeout=25.0):
     return post('/send',{'text':text},timeout)
 
 def post(endpoint,body,timeout=25.0):
-    if endpoint not in ('/send','/send-image','/send-share'):raise ValueError('Unsupported SDK action')
+    if endpoint not in ('/send','/send-image','/send-share','/group-send'):raise ValueError('Unsupported SDK action')
     payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
     request = urllib.request.Request(
         BASE_URL + endpoint, data=payload,

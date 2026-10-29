@@ -46,7 +46,7 @@ def dispatch_standalone_shared(db,owner):
         is_video=record['kind'] in ('video','video_card') if 'kind' in record else original_kind in ('video','video_card')
         transcript=record.get('transcript') or {}
         voice_text=str(transcript.get('text') or '').strip()
-        voice_label='鲸聊音频' if message.get('transport')=='whale' else '抖音语音'
+        voice_label={'whale':'鲸聊音频','qq':'QQ语音'}.get(message.get('transport'),'抖音语音')
         standalone_text=('['+voice_label+'自动转写，可能有误]\n'+voice_text) if record.get('kind')=='audio' and transcript.get('status')=='transcribed' and voice_text else '[用户分享的媒体]'
         message.update(original_kind=original_kind,kind='shared_video' if is_video else 'shared_media',raw_text=standalone_text)
         with db:db.execute("UPDATE live_tasks SET raw_json=?,status='pending' WHERE id=? AND status='resource_saved'",(json.dumps(message,ensure_ascii=False),task))
@@ -80,7 +80,7 @@ def process_one(db, page, owner):
     if reopen.exists():
         reopen.replace(ROOT/'image-history-check.attempted')
         page.locator('.StackLayoutStackTitleBarbackBtn').click(timeout=5000)
-        contact=page.locator('[data-e2e="conversation-item"]').filter(has_text='__OWNER_NICKNAME__')
+        contact=page.locator('[data-e2e="conversation-item"]').filter(has_text='搞点饭吃吃')
         contact.wait_for(state='visible',timeout=5000)
         if contact.count()!=1:
             raise ValueError('Owner conversation missing or ambiguous during history check')

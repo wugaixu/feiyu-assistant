@@ -260,7 +260,7 @@ def active_feed(page,video_id):
 
 def owner_identity_in_response(data):
     if isinstance(data,dict):
-        if data.get('sec_uid')==OWNER_PATH.rsplit('/',1)[-1] and data.get('nickname')=='__OWNER_NICKNAME__':
+        if data.get('sec_uid')==OWNER_PATH.rsplit('/',1)[-1] and data.get('nickname')=='搞点饭吃吃':
             avatar=data.get('avatar_thumb') or data.get('avatar_medium') or {}
             if isinstance(avatar,dict):return {'sec_uid':data['sec_uid'],'nickname':data['nickname'],'avatar_uri':avatar.get('uri'),'avatar_urls':avatar.get('url_list',[])}
         for value in data.values():
@@ -300,7 +300,7 @@ def mention_owner(page,context,editor):
         except Exception:pass
     page.on('response',observed)
     try:
-        editor.press_sequentially('@__OWNER_NICKNAME__',delay=80)
+        editor.press_sequentially('@搞点饭吃吃',delay=80)
         page.wait_for_timeout(1800)
     finally:page.remove_listener('response',observed)
     proof=getattr(context,'_local_owner_mention_identity',proof)
@@ -310,10 +310,10 @@ def mention_owner(page,context,editor):
     avatar=source[0].locator('[data-stack-layer="chat"] .StackLayoutStackChatHeaderuser img').get_attribute('src')
     resource=urlsplit(avatar).path.rsplit('/',1)[-1].split('~')[0].rsplit('.',1)[0]
     if resource not in json.dumps(proof):raise ValueError('Owner avatar/identity mismatch')
-    candidate=page.get_by_text('__OWNER_NICKNAME__',exact=True).locator('xpath=..').filter(has=page.locator('img[src*="'+resource+'"]'))
+    candidate=page.get_by_text('搞点饭吃吃',exact=True).locator('xpath=..').filter(has=page.locator('img[src*="'+resource+'"]'))
     if candidate.count()!=1:raise ValueError('Unique verified owner suggestion unavailable')
     candidate.click(timeout=5000)
-    if editor.locator('.douyin_mention_word').count()!=1 or editor.locator('.douyin_mention_word').inner_text()!='@__OWNER_NICKNAME__':raise ValueError('Real mention entity was not created')
+    if editor.locator('.douyin_mention_word').count()!=1 or editor.locator('.douyin_mention_word').inner_text()!='@搞点饭吃吃':raise ValueError('Real mention entity was not created')
     return proof
 
 def publish_comment(db,page,context,task,data):
@@ -514,13 +514,13 @@ def browser_tick(db,context):
                     except Exception:pass
             page.on('response',seen_response)
             try:
-                editor.press_sequentially('@__OWNER_NICKNAME__',delay=100)
+                editor.press_sequentially('@搞点饭吃吃',delay=100)
                 page.wait_for_timeout(2500)
             finally:page.remove_listener('response',seen_response)
             context._local_mention_probe={'video_id':video_id,'text':editor.inner_text()}
             result={'url':page.url,'text':page.locator('body').inner_text()[-8000:],
                     'editor':editor.evaluate('(e)=>e.outerHTML'),
-                    'suggestions':page.get_by_text('__OWNER_NICKNAME__',exact=True).evaluate_all('(es)=>es.map(e=>e.parentElement.outerHTML.slice(0,3500)).slice(0,20)')}
+                    'suggestions':page.get_by_text('搞点饭吃吃',exact=True).evaluate_all('(es)=>es.map(e=>e.parentElement.outerHTML.slice(0,3500)).slice(0,20)')}
             result['observed_search_responses']=observed
             result['owner_identity']=getattr(context,'_local_owner_mention_identity',None)
             page.screenshot(path=str(ROOT/'video-mention-probe.png'))

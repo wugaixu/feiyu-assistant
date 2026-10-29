@@ -11,7 +11,7 @@ from app import audio_sender,channels
 from app.whale_voice import extract_token
 
 
-def authorized(db,token):
+def authorized(db,token,*,caption=False):
     from app.sdk_receiver import OWNER
     row=db.execute('''SELECT t.id,t.status,t.raw_json,p.session_id,d.status,d.detail
         FROM whale_voice_permits p JOIN live_tasks t ON p.task_id=t.id
@@ -20,12 +20,20 @@ def authorized(db,token):
     if not row:raise ValueError('Plugin audio permission expired or unavailable')
     task,status,raw,session,dispatch,detail=row
     raw=json.loads(raw);detail=json.loads(detail)
-    if raw.get('transport')!='whale' or raw.get('direction')!='incoming' or detail.get('provider')!='astrbot' or detail.get('session_id')!=session:
+    transports=('whale','qq') if caption else ('whale',)
+    direction_ok=raw.get('direction')=='incoming'
+    if caption and raw.get('direction')=='outgoing' and raw.get('origin')=='diary_proactive':
+        from app.diary_proactive import target
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='diary_proactive_jobs'").fetchone():
+            job=db.execute('SELECT destination,expires,status FROM diary_proactive_jobs WHERE id=?',(task,)).fetchone()
+            direction_ok=bool(job and job[1]>time.time() and job[2]=='generating'
+                              and json.loads(job[0])==target() and json.loads(job[0]).get('session_id')==session)
+    if raw.get('transport') not in transports or not direction_ok or detail.get('provider')!='astrbot' or detail.get('session_id')!=session:
         raise ValueError('Plugin audio origin mismatch')
     if status=='processing' and dispatch in ('attempted','queued'):return task,False
     if status!='done' or dispatch not in ('processed','attempted') or not db.execute('SELECT 1 FROM reply_outbox WHERE task_id=?',(task,)).fetchone():
         raise ValueError('Original reply is not committed')
-    if channels.address(db,task)['channel']!='whale':raise ValueError('Whale audio only')
+    if channels.address(db,task)['channel'] not in transports:raise ValueError('Unsupported plugin audio channel')
     return task,True
 
 

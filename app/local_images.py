@@ -123,7 +123,7 @@ def permit(db,task_id,session_id):
     row=db.execute('SELECT owner,status,raw_json FROM live_tasks WHERE id=?',(task_id,)).fetchone()
     if not row or row[0]!=OWNER or row[1]!='processing':raise ValueError('Claimed owner turn required')
     raw=json.loads(row[2])
-    if raw.get('direction')!='incoming' or raw.get('origin')=='local_schedule':return ''
+    if raw.get('direction')!='incoming' or raw.get('origin')=='local_schedule' or raw.get('is_group'):return ''
     schema(db)
     token=secrets.token_hex(24);now=time.time()
     with db:db.execute('INSERT OR IGNORE INTO local_image_permits VALUES(?,?,?,?,?)',(token,task_id,session_id,now,now+240))

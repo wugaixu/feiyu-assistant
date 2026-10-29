@@ -50,8 +50,23 @@ def finish(db,task_id,parts,*,status='done'):
             route=channels.current(db)
             raw.update(return_channel=route['channel'],reply_device=route['device'])
             db.execute('UPDATE live_tasks SET raw_json=? WHERE id=?',(json.dumps(raw,ensure_ascii=False),task_id))
-        if any(p[0]=='audio' for p in prepared) and channels.address(db,task_id)['channel']!='whale':
+        channel=channels.address(db,task_id)['channel']
+        if any(p[0]=='audio' for p in prepared) and channel not in ('whale','qq'):
             raise ValueError('Audio replies require the Whale channel')
+        if channel=='qq':
+            ordered=[]
+            for index,part in enumerate(prepared):
+                kind,value,digest,caption=part
+                caption=caption.strip() if kind=='audio' and caption else ''
+                # Reposition an adjacent identical original, rather than echoing twice.
+                if (kind=='text' and index+1<len(prepared) and prepared[index+1][0]=='audio'
+                    and (prepared[index+1][3] or '').strip()==value
+                    and (index==0 or prepared[index-1][0]!='audio')):
+                    continue
+                ordered.append(part)
+                if caption and not (index+1<len(prepared) and prepared[index+1][0]=='text' and prepared[index+1][1]==caption):
+                    ordered.append(('text',caption,None,None))
+            prepared=ordered
         for seq,(kind,value,digest,work) in enumerate(prepared):
             key=f'{task_id}:batch:{seq}'
             if kind=='text':

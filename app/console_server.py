@@ -138,6 +138,15 @@ def ensure_children():
     """Start the SDK service / worker if they are not up (cheap health checks)."""
     started = []
     if ensure_whale():started.append('whale_gateway')
+    from app.astrbot_instances import ensure as ensure_instances
+    started.extend('astrbot_'+key for key in ensure_instances(_spawn,PROJECT))
+    try:
+        from app import qq_channel
+        if qq_channel.settings().get('enabled'):
+            process=qq_channel.start()
+            if process is not None:
+                process._qq_napcat=True;_children.append(process);started.append('qq_napcat')
+    except Exception:pass
     if not _sdk_up():
         _spawn([NODE_EXE, str(PROJECT / 'sdk_service.mjs')], ROOT, 'sdk-local.stdout.log')
         started.append('sdk_service')
@@ -448,8 +457,18 @@ def outbound_state(limit=30):
             try:receipt=json.loads(row['detail'] or '{}')
             except ValueError:receipt={}
             if not isinstance(receipt,dict):receipt={}
-            channel='whale' if receipt.get('channel')=='whale' else 'douyin'
+            channel=receipt.get('channel') if receipt.get('channel') in ('whale','qq','douyin') else None
+            if channel is None:
+                try:
+                    from app.channels import address
+                    channel=address(db,row['task_id'])['channel']
+                except (ValueError,TypeError,sqlite3.Error):channel='unknown'
+                # Legacy receipt-only rows lack a live task; classify their SDK receipt.
+                if channel=='douyin' and not receipt and row['status'] in ('pending','attempted'):
+                    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='live_tasks'").fetchone():channel='unknown'
             if row['status'] in ('pending','attempted'):verdict=row['status']
+            elif channel=='qq':
+                verdict='server_accepted' if row['status']=='server_accepted' and receipt.get('message_id') else 'outcome_uncertain'
             elif channel=='whale':
                 verdict='server_accepted' if (row['status']=='server_accepted' and receipt.get('result')=='server_accepted' and receipt.get('receipt_scope')=='saved_in_local_whale_history') else 'outcome_uncertain'
             else:verdict=classify(receipt)
@@ -551,7 +570,9 @@ def astrbot_state():
     from app import astrbot_client
     state=astrbot_client.state()
     from app.workflow_protocol import astrbot_reader
-    state['material_reader']=astrbot_reader()
+    from app.astrbot_instances import session_info
+    chosen=session_info(target_state()['astrbot']['session_id'])
+    state['material_reader']=astrbot_reader(chosen.get('instance_id','default'))
     from app.local_images import state as image_state
     state['local_image']=image_state()
     from app.voice_capabilities import state as voice_state
@@ -588,6 +609,7 @@ def start_astrbot():
 def set_agent(provider,session_id=None,config_id=None):
     if provider not in ('codex','dsh','astrbot'):raise ValueError('无效的处理主体')
     config=_read_json(TARGET_FILE,{}) or {}
+    previous=(config.get('provider'),dict(config.get('astrbot',{})))
     if provider=='dsh':
         from app import dsh_client
         if not isinstance(session_id,str) or not dsh_client.SESSION_RE.fullmatch(session_id):
@@ -609,6 +631,9 @@ def set_agent(provider,session_id=None,config_id=None):
             raise ValueError('AstrBot 会话不在当前可用列表')
         if not any(x['id']==config_id for x in state['configs']):
             raise ValueError('AstrBot 人设配置不在当前可用列表')
+        selected=next(x for x in state['sessions'] if x['id']==session_id)
+        if selected.get('available') is False:raise ValueError('所选独立 AstrBot 实例未连接，不改投其他实例')
+        config_id=selected.get('config_id') or config_id
         config['astrbot']={'session_id':session_id,'config_id':config_id}
     elif session_id is not None:
         if not isinstance(session_id,str) or session_id not in {t['id'] for t in read_threads()}:
@@ -618,6 +643,9 @@ def set_agent(provider,session_id=None,config_id=None):
         candidates=config.get('candidates',[])
         config['candidates']=list(dict.fromkeys([*candidates,session_id]))
     config['provider']=provider
+    if previous!=(provider,config.get('astrbot',{})):
+        import uuid
+        config['diary_proactive_generation']=uuid.uuid4().hex
     _atomic_json(TARGET_FILE,config)
     return target_state()
 
@@ -686,6 +714,9 @@ class Handler(BaseHTTPRequestHandler):
                     value=whale_channel.state(db)
                     if self.headers.get('X-Whale-Bridge'):value['current_device']=self.headers.get('X-Whale-Device')
                     self._send(200,value)
+            elif path == '/api/groups':
+                from app import group_chats
+                with closing(sqlite3.connect(ASSISTANT_DB,timeout=3)) as db:self._send(200,group_chats.state(db))
             elif path == '/api/threads':
                 self._send(200, {'threads': read_threads(), 'target': target_state()})
             elif path == '/api/agents/dsh':
@@ -718,6 +749,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split('?')[0]
         from app import whale_channel
+        if path=='/api/qq-events':
+            from app import qq_channel
+            try:
+                if self.client_address[0]!='127.0.0.1':
+                    self._send(403,{'error':'QQ event denied'});return
+                payload=qq_channel.read_event(self)
+                if not qq_channel.signature_ok(payload,self.headers.get('X-Signature')):
+                    self._send(403,{'error':'QQ event denied'});return
+                with closing(sqlite3.connect(ASSISTANT_DB,timeout=3)) as db:
+                    self._send(200,qq_channel.receive(db,json.loads(payload)))
+            except Exception as exc:self._send(400,{'error':type(exc).__name__})
+            return
         bridge_token=self.headers.get('X-Whale-Bridge')
         bridge_device=self.headers.get('X-Whale-Device')
         if path=='/api/whale-bridge/enroll':
@@ -731,7 +774,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/whale-bridge' or bridge_token:
             if not whale_channel.authenticate(bridge_token,bridge_device,management=path!='/api/whale-bridge') or (path!='/api/whale-bridge' and path not in whale_channel.POST_ROUTES):
                 self._send(403,{'error':'Whale bridge denied'});return
-        guarded = path.startswith('/api/storage') or path.startswith('/api/astrbot') or path in ('/api/agent','/api/review','/api/comment-login','/api/activity','/api/local-image','/api/channels','/api/whale-bridge')
+        guarded = path.startswith('/api/storage') or path.startswith('/api/astrbot') or path in ('/api/agent','/api/review','/api/comment-login','/api/activity','/api/local-image','/api/channels','/api/qq','/api/whale-bridge','/api/groups')
         if guarded:
             origin=self.headers.get('Origin')
             if self.headers.get('Host') not in ('127.0.0.1:8793','localhost:8793') or (origin and origin not in ('http://127.0.0.1:8793','http://localhost:8793')) or 'application/json' not in self.headers.get('Content-Type',''):
@@ -762,6 +805,12 @@ class Handler(BaseHTTPRequestHandler):
                     elif action=='audio':
                         payload,mime=whale_channel.audio(db,bridge_device,body.get('seq'));self._send(200,payload,mime)
                     else:self._send(400,{'error':'Unknown bridge action'})
+            elif path == '/api/groups':
+                from app import group_chats
+                with closing(sqlite3.connect(ASSISTANT_DB,timeout=3)) as db:self._send(200,group_chats.action(db,body))
+            elif path == '/api/qq':
+                from app import qq_channel
+                with closing(sqlite3.connect(ASSISTANT_DB,timeout=3)) as db:self._send(200,qq_channel.configure(db,body))
             elif path == '/api/channels':
                 if bridge_token and body.get('sync_paired'):
                     self._send(403,{'error':'Device enrollment is local-only'});return

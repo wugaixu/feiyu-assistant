@@ -1,6 +1,6 @@
 name: workflow_local_vision
 display_name: 工作流 · 统一素材阅读
 desc: 按公共资料包路径分页读取文本及实际图片，不发送图片，不读取本轮之外的文件。
-version: 2.0.0
+version: 2.3.0
 author: Local workflow
 astrbot_version: ">=4.29.0"

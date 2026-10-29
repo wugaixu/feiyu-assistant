@@ -388,6 +388,7 @@
 </style>
 </head>
 <body>
+  <div id="networkNotice" hidden role="status" style="position:fixed;top:64px;left:12px;right:12px;z-index:120;background:#fff3d6;color:#785a16;padding:10px 14px;border-radius:12px;font-size:14px;box-shadow:0 2px 10px #0001"><span id="networkMessage">连接中断，正在重试，配对信息已保留。</span><button id="networkRetry" style="float:right;border:0;background:transparent;color:#2469c7">重试</button></div>
 
   <header class="topbar" id="topbar" style="display:none">
     <button class="scan" id="scanBtn" aria-label="扫码连接" title="扫码连接">
@@ -984,13 +985,34 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
     var sep = path.indexOf('?') >= 0 ? '&' : '?';
     if (deviceId) { path = path + sep + 'device=' + encodeURIComponent(deviceId); sep = '&'; }
     if (clientId) path = path + sep + 'client=' + encodeURIComponent(clientId);
-    return fetch(path, opts).then(function (r) { return r.json(); });
+    // Time out even if fetch/body never settles; never automatically replay writes.
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    if (controller && !opts.signal) opts.signal = controller.signal;
+    var timer;
+    var timeout = new Promise(function (_, reject) {
+      timer = setTimeout(function () {
+        if (controller) controller.abort();
+        reject(new Error('连接超时'));
+      }, opts.method && opts.method !== 'GET' ? 120000 : 12000);
+    });
+    return Promise.race([fetch(path, opts).then(function (r) { return r.json(); }), timeout]).then(function (value) {
+      clearTimeout(timer); return value;
+    }, function (error) { clearTimeout(timer); throw error; });
   }
 
   var assistantWorkflow=false;
+  var stateLoading=false, stateRetryTimer=null;
+  function connectionNotice(visible) {
+    document.getElementById('networkNotice').hidden=!visible;
+  }
   function loadState() {
+    if (stateLoading) return;
+    stateLoading=true;
+    clearTimeout(stateRetryTimer); stateRetryTimer=null;
     api('/api/wechat/state').then(function (s) {
-      if (!s || s.paired !== true) { showGuide(); return; }
+      if (s && (s.paired === false || s.code === 'unpaired')) { connectionNotice(false); showGuide(); return; }
+      if (!s || s.paired !== true) throw new Error('服务暂时不可用');
+      connectionNotice(false);
       assistantWorkflow=!!s.workflow;
       cfg = {
         nickname: s.nickname || cfg.nickname,
@@ -1030,7 +1052,10 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
       showDispatchAttention(s.dispatch_attention);
 
 
-    }).catch(function () { showGuide(); });
+    }).catch(function () {
+      connectionNotice(true);
+      stateRetryTimer=setTimeout(loadState,5000);
+    }).then(function () { stateLoading=false; });
   }
 
   var lastDispatchNotice='';
@@ -1098,22 +1123,37 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
     }
   }
 
+  var pollInFlight=false;
   function startPolling() {
-    if (pollTimer) return;
+    if (pollTimer || pollInFlight) return;
     var tick = function () {
-      // 串行化：上一个请求完成后再调度下一个，避免网络差时重叠导致重复渲染
+      pollTimer=null;
+      if (pollInFlight) return;
+      pollInFlight=true;
       api('/api/wechat/poll?since=' + lastSeq).then(function (r) {
-        if (r && r.ok === true) {
-          if (r.busy && !statusRow) setStatus('正在思考');
-          (r.events || []).forEach(handleEvent);
-          lastSeq = r.seq || lastSeq;
-        }
-      }).catch(function () {}).then(function () {
+        if (!r || r.ok !== true) throw new Error('连接暂不可用');
+        connectionNotice(false);
+        if (r.busy && !statusRow) setStatus('正在思考');
+        (r.events || []).forEach(handleEvent);
+        lastSeq = r.seq || lastSeq;
+      }).catch(function () { connectionNotice(true); }).then(function () {
+        pollInFlight=false;
         pollTimer = setTimeout(tick, 1500);
       });
     };
     tick();
   }
+  function resumeConnection() {
+    if (document.hidden) return;
+    if (chatShown) {
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer=null; }
+      startPolling();
+    } else loadState();
+  }
+  window.wechatReconnect=resumeConnection;
+  window.addEventListener('online',resumeConnection);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)resumeConnection();});
+  document.getElementById('networkRetry').addEventListener('click',resumeConnection);
 
   /* ── 发送 ──────────────────────────────── */
   function send() {
@@ -1605,10 +1645,25 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
   });
 
 
-  var managerLoaded=false,managerVisible=false;
+  var managerLoaded=false,managerVisible=false,managerReady=false,managerLoadTimer=null;
+  function managerNotice(text){
+    var notice=document.getElementById('managerNotice');
+    if(!notice){notice=document.createElement('div');notice.id='managerNotice';notice.style.cssText='padding:16px;color:#d7e5fc;font-size:14px;line-height:1.6';document.getElementById('managerOverlay').insertBefore(notice,document.getElementById('managerFrame'));}
+    notice.textContent=text;notice.hidden=!text;
+  }
+  function reloadManager(){
+    clearTimeout(managerLoadTimer);managerReady=false;managerLoaded=true;
+    managerNotice('正在连接管理台…');
+    // Assign src rather than accessing an error document's location: Android
+    // WebView error pages may have an opaque origin and reject location.reload.
+    document.getElementById('managerFrame').src='/api/wechat/assistant/manager?device='+encodeURIComponent(deviceId)+'&reload='+Date.now();
+    managerLoadTimer=setTimeout(function(){
+      if(!managerReady){managerLoaded=false;managerNotice('管理台未能加载，聊天不受影响。请点击右上角 ↻ 重试。');}
+    },15000);
+  }
   function openManager(){
     closePopovers();setVoiceMode(false);var frame=document.getElementById('managerFrame');
-    if(!managerLoaded){frame.src='/api/wechat/assistant/manager?device='+encodeURIComponent(deviceId);managerLoaded=true;}
+    if(!managerLoaded||!managerReady)reloadManager();
     document.getElementById('managerOverlay').hidden=false;managerVisible=true;notifyManager();
     ['topbar','msgs','inputbar'].forEach(function(id){document.getElementById(id).inert=true;});
     if(!history.state||!history.state.whaleManager)history.pushState({whaleManager:true},'',location.href);
@@ -1621,11 +1676,16 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
   function notifyManager(){var frame=document.getElementById('managerFrame');if(frame.contentWindow)frame.contentWindow.postMessage({type:'whale-manager-visibility',visible:managerVisible},location.origin);}
   document.getElementById('managerFrame').addEventListener('load',notifyManager);
   document.getElementById('managerBack').addEventListener('click',function(){closeManager();});
-  document.getElementById('managerReload').addEventListener('click',function(){document.getElementById('managerFrame').contentWindow.location.reload();});
+  document.getElementById('managerReload').addEventListener('click',function(){
+    if(managerReady){document.getElementById('managerFrame').contentWindow.postMessage({type:'whale-manager-reload'},location.origin);}
+    else reloadManager();
+  });
   window.addEventListener('popstate',function(){closeManager(true);});
   window.addEventListener('message',function(e){
     var frame=document.getElementById('managerFrame');
-    if(e.origin===location.origin&&e.source===frame.contentWindow&&e.data&&e.data.type==='whale-close-manager')closeManager();
+    if(e.origin!==location.origin||e.source!==frame.contentWindow||!e.data)return;
+    if(e.data.type==='whale-manager-ready'){managerReady=true;managerLoaded=true;clearTimeout(managerLoadTimer);managerNotice('');notifyManager();}
+    if(e.data.type==='whale-close-manager')closeManager();
   });
   function closePopovers(){closeTextSheet();closeVoiceSheet();hideAvatarMenu();hideNickDialog();document.getElementById('selectionDialog').hidden=true;document.getElementById('selectionMask').classList.remove('show');}
   function pickAppearance(kind,side){

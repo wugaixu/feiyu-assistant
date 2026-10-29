@@ -134,8 +134,8 @@ class VideoRoundsTests(unittest.TestCase):
         review.update(category='comedy',category_reason='人物对话的反转来自已观察的字幕和画面')
         self.assertEqual(v.review(self.db,task,review)['status'],'interesting')
     def test_owner_identity_requires_exact_profile_not_duplicate_name(self):
-        self.assertIsNone(v.owner_identity_in_response({'sec_uid':'someone_else','nickname':'__OWNER_NICKNAME__'}))
-        owner={'sec_uid':v.OWNER_PATH.rsplit('/',1)[-1],'nickname':'__OWNER_NICKNAME__','avatar_thumb':{'uri':'known-avatar'}}
+        self.assertIsNone(v.owner_identity_in_response({'sec_uid':'someone_else','nickname':'搞点饭吃吃'}))
+        owner={'sec_uid':v.OWNER_PATH.rsplit('/',1)[-1],'nickname':'搞点饭吃吃','avatar_thumb':{'uri':'known-avatar'}}
         self.assertEqual(v.owner_identity_in_response({'users':[owner]})['avatar_uri'],'known-avatar')
     def test_manual_three_tests_need_explicit_message_and_stay_bounded(self):
         v.schema(self.db);task='c'*32

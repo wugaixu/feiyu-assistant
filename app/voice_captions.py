@@ -12,7 +12,7 @@ def remember(db,token,raw,text):
     from app.plugin_audio import authorized
     from app import audio_sender
     from app.resource_storage import LOCK
-    task,late=authorized(db,token)
+    task,late=authorized(db,token,caption=True)
     if late:raise ValueError('Speech turn already finished')
     schema(db)
     with LOCK:
@@ -20,7 +20,7 @@ def remember(db,token,raw,text):
         _,digest,_=audio_sender.validate_audio(path)
         with db:
             db.execute('BEGIN IMMEDIATE')
-            if authorized(db,token)!=(task,False):raise ValueError('Speech turn changed')
+            if authorized(db,token,caption=True)!=(task,False):raise ValueError('Speech turn changed')
             old=db.execute('SELECT text FROM whale_voice_captions WHERE task_id=? AND sha256=?',(task,digest)).fetchone()
             if old and old[0]!=text.strip():raise ValueError('Audio caption conflict')
             db.execute('INSERT OR IGNORE INTO whale_voice_captions VALUES(?,?,?)',(task,digest,text.strip()))

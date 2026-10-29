@@ -18,7 +18,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
 def config():
-    value=json.loads((ROOT/'astrbot-bridge.json').read_text(encoding='utf-8'))
+    from app.astrbot_instances import CURRENT,info
+    path=ROOT/'astrbot-bridge.json' if CURRENT.get()=='default' else info()['root']/'bridge.json'
+    value=json.loads(path.read_text(encoding='utf-8'))
     if not str(value.get('api_key','')).startswith('abk_') or value.get('username')!='douyin-owner-__OWNER_UID__':
         raise ValueError('AstrBot connector credentials invalid')
     return value
@@ -26,7 +28,9 @@ def config():
 def open_request(path, body=None, timeout=5, content_type='application/json', method=None):
     if not path.startswith('/') or path.startswith('//'): raise ValueError('Local API path required')
     data = json.dumps(body,ensure_ascii=False).encode('utf-8') if isinstance(body,(dict,list)) else body
-    req=urllib.request.Request(BASE+path,data=data,headers={'Authorization':'Bearer '+config()['api_key'],'Content-Type':content_type},method=method)
+    from app.astrbot_instances import CURRENT,info
+    base=BASE if CURRENT.get()=='default' else info()['url'].rstrip('/')+'/api/v1'
+    req=urllib.request.Request(base+path,data=data,headers={'Authorization':'Bearer '+config()['api_key'],'Content-Type':content_type},method=method)
     try: return OPENER.open(req,timeout=timeout)
     except Exception as exc: raise ConnectionError('AstrBot本地接口不可用，请检查服务和连接密钥') from None
 
@@ -35,7 +39,7 @@ def request(path,body=None,timeout=5,method=None):
     if value.get('status')!='ok': raise ConnectionError('AstrBot接口未确认操作；请查看AstrBot日志')
     return value.get('data')
 
-def _state(timeout=2):
+def _one_state(timeout=2):
     try:
         cfg=config(); configs=request('/chat/configs',timeout=timeout)
         if isinstance(configs,dict): configs=configs.get('info_list',[])
@@ -43,15 +47,31 @@ def _state(timeout=2):
         remote=[{'id':x['session_id'],'title':x.get('display_name') or '抖音私信会话','cwd':'AstrBot 专用会话'} for x in value.get('sessions',[])]
         try: local=json.loads((ROOT/'astrbot-sessions.json').read_text(encoding='utf-8'))
         except (OSError,ValueError):local=[]
-        aliases={x['id']:x['title'] for x in local if isinstance(x,dict)}
+        from app.astrbot_instances import CURRENT
+        local=[x for x in local if isinstance(x,dict) and x.get('instance_id','default')==CURRENT.get()]
+        aliases={x['id']:x for x in local}
         # Only sessions created here are valid DM targets. Scratch sessions from
         # self-tests or public-comment generation stay out of the picker; they
         # are still visible in AstrBot's own data pages.
-        sessions=[{**x,'title':aliases[x['id']]} for x in remote if x['id'] in aliases]
+        sessions=[{**x,**aliases[x['id']]} for x in remote if x['id'] in aliases]
         sessions += [x for x in local if isinstance(x,dict) and x['id'] not in {s['id'] for s in sessions}]
         return {'online':True,'sessions':sessions,'configs':configs,'error':None,'url':'http://127.0.0.1:6185/'}
     except Exception:
         return {'online':False,'sessions':[],'configs':[],'error':'AstrBot未连接，请启动服务或检查本地连接配置','url':'http://127.0.0.1:6185/'}
+
+def _state(timeout=2):
+    from app.astrbot_instances import registry,scope,info
+    sessions=[];configs=[];instances=[]
+    for key in ('default',*registry()):
+        with scope(key):
+            result=_one_state(timeout)
+            value=info()
+            instances.append({'id':key,'title':value['title'],'url':value['url'],'online':result['online']})
+            sessions.extend({**s,'instance_id':key,'available':result['online']} for s in result['sessions'])
+            configs.extend({**c,'instance_id':key} for c in result['configs'])
+    return {'online':any(x['online'] for x in instances),'sessions':sessions,'configs':configs,'instances':instances,
+            'error':None if any(x['online'] for x in instances) else 'AstrBot未连接','url':'http://127.0.0.1:6185/'}
+
 
 _state_cache={}
 _state_lock=threading.Lock()
@@ -61,7 +81,7 @@ def state(timeout=2,cache_seconds=0):
     # Only background delivery opts into caching; UI/manual refresh stays fresh.
     if cache_seconds<=0:return _state(timeout)
     try:
-        key=tuple((ROOT/name).stat().st_mtime_ns for name in ('astrbot-bridge.json','astrbot-sessions.json'))
+        key=tuple((ROOT/name).stat().st_mtime_ns for name in ('astrbot-bridge.json','astrbot-sessions.json','astrbot-instances.json'))
     except OSError:key=None
     with _state_lock:
         now=time.monotonic()
@@ -190,7 +210,8 @@ def streaming_enabled(config_id):
     if isinstance(profiles,dict):profiles=profiles.get('info_list',[])
     profile=next((x for x in profiles if x.get('id')==config_id),None)
     if not profile:raise ValueError('AstrBot所选配置已不可用')
-    data_root=(ROOT/'astrbot/runtime/data').resolve()
+    from app.astrbot_instances import CURRENT,data_root as instance_data_root
+    data_root=(ROOT/'astrbot/runtime/data').resolve() if CURRENT.get()=='default' else instance_data_root().resolve()
     path=Path(profile['path']).resolve(strict=True)
     if path!=data_root/'cmd_config.json' and not (path.is_relative_to(data_root/'config') and path.suffix=='.json'):
         raise ValueError('AstrBot配置路径不在允许目录')
@@ -201,6 +222,15 @@ def streaming_enabled(config_id):
 
 
 def chat(session_id,message,config_id='default',timeout=180):
+    from app.astrbot_instances import session_scope,CURRENT
+    with session_scope(session_id):
+        result=_chat(session_id,message,config_id,timeout)
+        if CURRENT.get()!='default':
+            for part in result:part['_astrbot_instance']=CURRENT.get()
+        return result
+
+
+def _chat(session_id,message,config_id='default',timeout=180):
     # Do not pin selected_provider: the model, persona and plugins configured in
     # the AstrBot dashboard must be what actually answers. A pinned provider
     # here would silently override dashboard model changes.

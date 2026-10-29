@@ -39,7 +39,7 @@ class LocalReadContext:
 def media_step(db,owner):
     from app.media_pipeline import update_shared_analysis,dispatch_standalone_shared
     update_shared_analysis(db,owner);dispatch_standalone_shared(db,owner)
-    row=db.execute("SELECT id,raw_json FROM live_tasks WHERE owner=? AND status='media_pending' ORDER BY received LIMIT 1",(owner,)).fetchone()
+    row=db.execute("SELECT id,raw_json FROM live_tasks WHERE owner=? AND status='media_pending' ORDER BY CASE WHEN json_extract(raw_json,'$.is_group')=1 THEN 1 ELSE 0 END,received LIMIT 1",(owner,)).fetchone()
     if not row:return None
     message={'kind':'sdk_message'};record={}
     try:
@@ -47,6 +47,9 @@ def media_step(db,owner):
         if message.get('transport')=='whale' and message.get('upload'):
             from app.whale_upload import capture as capture_upload
             record=capture_upload(row[0],message)
+        elif message.get('transport')=='qq':
+            from app.qq_channel import capture
+            record=capture(row[0],message)
         elif message.get('transport')=='sdk':
             from app.sdk_media import capture
             record=capture(None,row[0],message)
@@ -79,7 +82,7 @@ def media_step(db,owner):
         db.execute('INSERT OR IGNORE INTO media_records(id,owner,received,kind,record_json) VALUES(?,?,?,?,?)',
             (row[0],owner,time.time(),message['kind'],json.dumps(record,ensure_ascii=False)))
         if message['kind']=='audio':
-            source_label='鲸聊音频' if message.get('transport')=='whale' else '抖音语音'
+            source_label={'whale':'鲸聊音频','qq':'QQ语音'}.get(message.get('transport'),'抖音语音')
             transcript=record.get('transcript') or {}
             text=str(transcript.get('text') or '').strip()
             recognized=transcript.get('status')=='transcribed' and bool(text)
@@ -106,6 +109,8 @@ def outbound_step(db,owner):
     from app import sdk_sender
     from app import reply_batch
     reply_batch.schema(db)
+    from app.diary_proactive import expire_pending
+    expire_pending(db)
     from app import channels
     channels.schema(db)
     policy=dm_policy()
@@ -130,9 +135,20 @@ def outbound_step(db,owner):
         for candidate in candidates:
             if not reply_batch.allowed(db,candidate[0]):continue
             route=channels.address(db,candidate[6])
+            if route.get('group_id'):
+                from app import group_chats
+                raw=json.loads(db.execute('SELECT raw_json FROM live_tasks WHERE id=?',(candidate[6],)).fetchone()[0])
+                if not group_chats.task_allowed(db,raw):
+                    db.execute("UPDATE reply_outbox SET status='cancelled' WHERE id=? AND status='pending'",(candidate[0],));continue
             if route['channel']=='douyin':
                 if not health_checked:health=sdk_sender.health();health_checked=True
                 if not health or not health.get('online') or str(health.get('uid'))!='__ACCOUNT_UID__':blocked='sdk_offline';continue
+                if route.get('group_id') and health.get('capabilities',{}).get('group_chat')!=1:blocked='sdk_group_unsupported';continue
+            elif route['channel']=='qq':
+                from app import qq_channel
+                if not qq_channel.permitted(route['device']):blocked='qq_disabled';continue
+                qq_health=qq_channel.health()
+                if not qq_health.get('online') or not qq_health.get('bound'):blocked='qq_offline';continue
             elif not whale_channel.settings().get('enabled') or route['device'] not in whale_channel.settings().get('devices',[]):blocked='whale_disabled';continue
             row=candidate;break
         if not row:return {'state':blocked}
@@ -142,7 +158,18 @@ def outbound_step(db,owner):
         attempt_id=uuid.uuid4().hex
         db.execute('INSERT INTO outbound_attempts VALUES(?,?,?,NULL,?,?,NULL)',(attempt_id,row[0],time.time(),0 if kind!='text' else len(row[2] or ''),'attempted'))
     try:
-        if route['channel']=='whale':
+        if route.get('group_id'):
+            if kind=='image':
+                from app.image_sender import validate_image,stage_for_sdk
+                path,digest=validate_image(row[3])
+                if digest!=row[4]:raise ValueError('Queued image changed')
+                path=stage_for_sdk(path,digest)
+                with db:db.execute("UPDATE reply_outbox SET path=? WHERE id=? AND status='attempted'",(str(path),row[0]))
+            outcome=sdk_sender.post('/group-send',{'outbox_id':row[0]})
+        elif route['channel']=='qq':
+            from app.qq_channel import deliver
+            outcome=deliver(route['device'],kind,row[2],row[3],row[4],row[5])
+        elif route['channel']=='whale':
             outcome=whale_channel.deliver(db,route['device'],row[0],kind,row[2],row[3],row[4],row[5])
         elif kind=='image':
             from app.image_sender import validate_image,stage_for_sdk
@@ -157,7 +184,7 @@ def outbound_step(db,owner):
     except Exception as exc:outcome={'result':'outcome_uncertain','error_class':type(exc).__name__}
     result=outcome.get('result','outcome_uncertain')
     prior=db.execute('SELECT attempts FROM outbound_retries WHERE outbox_id=?',(row[0],)).fetchone()
-    decision={'retry':False,'attempts':0} if kind in ('image','share','audio') else retry_decision(prior[0] if prior else 0,result,policy)
+    decision={'retry':False,'attempts':0} if route.get('group_id') or route['channel']=='qq' or kind in ('image','share','audio') else retry_decision(prior[0] if prior else 0,result,policy)
     finished=time.time()
     with db:
         db.execute('UPDATE outbound_attempts SET finished=?,status=?,detail=? WHERE id=?',(finished,result,json.dumps(outcome,ensure_ascii=False),attempt_id))
