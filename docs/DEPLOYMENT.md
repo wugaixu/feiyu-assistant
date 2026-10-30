@@ -21,7 +21,7 @@ D:\FeiyuData\core-venv\Scripts\python.exe configure.py
 D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_components.py --runtime-dir D:\FeiyuData --component sdk
 ```
 
-`configure.py` 只在新的 `<runtime>/installed/0.3.0` 生成运行代码和缺失的初始配置，不启动程序、不迁移历史、不覆盖旧目录。源码保留模板，实际运行生成目录；以后升级先备份并按新版本迁移，不反复强制覆盖代码/配置。
+`configure.py` 只在新的 `<runtime>/installed/0.3.1` 生成运行代码和缺失的初始配置，不启动程序、不迁移历史、不覆盖旧目录。源码保留模板，实际运行生成目录；以后升级先备份并按新版本迁移，不反复强制覆盖代码/配置。
 
 核心 SDK 使用 npm `douyin-im@1.1.0`；原验证源码提交为 `f6eee669c39094224e00c6b877e1964d9da4e393`。发布版统一从 `<runtime>/node_modules/douyin-im/lib/index.js` 加载，不依赖作者研究目录。
 
@@ -65,14 +65,14 @@ D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_plugins.py --runtime-di
 ```yaml
 - insert:
     - id: douyin-local-session-bridge
-      name: "file:///D:/FeiyuData/installed/0.3.0/dsh_bridge/index.mjs"
+      name: "file:///D:/FeiyuData/installed/0.3.1/dsh_bridge/index.mjs"
 ```
 
 先备份原文件，不覆盖其他插件；在DSH正常重载或重启后确认8794在线。管理台选DSH时会检查并修复丢失的注册行，保留原条目。接口以DSH0.2.1-rc系列的SessionController为基线，更新后须确认。DSH消息须按生成目录AGENTS说明读取资料并执行bridge完成任务。
 
 ## 3. 启动、扫码与手机连接
 
-从 `<runtime>/installed/0.3.0/管理界面.vbs` 启动；它隐藏控制台，管理台保活SDK、receiver和已启用的鲸聊。页面关闭只是保留到托盘，退出用托盘“关闭程序”。不添加开机自启或Codex定时任务。
+从 `<runtime>/installed/0.3.1/管理界面.vbs` 启动；它隐藏控制台，管理台保活SDK、receiver和已启用的鲸聊。页面关闭只是保留到托盘，退出用托盘“关闭程序”。不添加开机自启或Codex定时任务。
 
 SDK首次产生 `<runtime>/sdk-login.png`，用**助手小号**扫码；平台验证由自己完成。管理台检查实际小号UID，不能拿SDK在线代替主站评论登录或DouK Cookie。
 
@@ -140,3 +140,7 @@ QQ：自行安装NapCatQQ并用机器人小号扫码，不能用主人号登录�
 configure.py生成独立随机 qq-onebot-secret.txt 与 qq-webui-secret.txt，已有文件保留。请在运行目录 qq-channel.json 补上 napcat_dir（包含NapCatWinBootMain.exe、NapCatWinBootHook.dll、napcat.mjs、config的独立目录）及 qq_exe（已安装QQNT的QQ.exe绝对路径）。不要填写手机QQ目录或直接改QQ安装文件。先按NapCat官方说明完成兼容QQNT版本的安装与启动，再设置其 config/webui.json 的token与本地qq-webui-secret.txt一致，OneBot HTTP token和回调签名secret与qq-onebot-secret.txt一致；WebUI、OneBot均绑定127.0.0.1。管理台“绑定已登录小号”会再次读取get_login_info及核验主人/小号不是同一个账号，并设置媒体字节转换选项。
 
 NapCat、抖音SDK、DouK、主站评论登录是不同登录面：QQ小号扫码不替代抖音登录，SDK登录不替代主站评论或DouK Cookie。AstrBot的模型API Key在其模型提供商页面填写；本地连接abk_ Key通过connect_astrbot.py保存，两者不能混用。Tailscale需要用户自己的登录和Funnel授权，本项目不提供公网服务器。
+
+## 手机管理台黑屏恢复
+
+请确认电脑托盘程序仍在运行；退出整个程序会同时关闭网关，单关管理网页不会。聊天正常而管理台黑屏时，点击右上角刷新会重新加载管理页；重新打开也会检测页面是否仍响应。15秒未加载可选择“单独打开管理台”。更新网关后手机完全重新打开鲸聊以加载新页面，不要仅因临时断线就清除配对。旧页面在内存中不会因电脑源码变化而自动变成新版。

@@ -8,6 +8,7 @@ class DirectVideoTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(dir=sdk_video.ROOT);self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)
+        root_patch=patch.object(sdk_video,'ROOT',self.root);root_patch.start();self.addCleanup(root_patch.stop)
     def response(self,key='0'*32):
         result=MagicMock();result.__enter__.return_value=result
         result.read.return_value=json.dumps({'ok':True,'url':'https://example.douyinvod.com/video','key':key}).encode()

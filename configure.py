@@ -1,7 +1,7 @@
 """Compile a relocatable deployment from this clean source snapshot; never start services."""
 import argparse,json,os,re,secrets,shutil,sys
 from pathlib import Path
-VERSION='0.3.0'
+VERSION='0.3.1'
 REPO=Path(__file__).resolve().parent
 
 def safe_path(value):

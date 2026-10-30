@@ -6,7 +6,7 @@ from app.live_service import LiveStore
 
 class StorageTests(unittest.TestCase):
     def setUp(self):
-        temp=tempfile.TemporaryDirectory(dir=s.RUNTIME);self.addCleanup(temp.cleanup)
+        temp=tempfile.TemporaryDirectory(dir=s.TEMP_PARENT);self.addCleanup(temp.cleanup)
         self.parent=Path(temp.name);self.root=self.parent/'runtime';self.root.mkdir()
         for key,value in {'RUNTIME':self.root,'TEMP_PARENT':self.parent,'CONFIG':self.root/'resource-storage.json','STATE':self.root/'state.json','PREVIEW':self.root/'preview.json'}.items():
             p=patch.object(s,key,value);p.start();self.addCleanup(p.stop)
@@ -50,6 +50,12 @@ class StorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):s.save({'cleanup_enabled':True})
         with self.assertRaises(ValueError):s.save({'retention_days':0})
         with self.assertRaises(ValueError):s.save({'interval_hours':True})
+
+    def test_durable_runtime_outside_temporary_workspace_remains_valid(self):
+        with patch.object(s,'TEMP_PARENT',self.parent/'temporary'):
+            value=s.save({'base':str(self.root)})
+            self.assertEqual(Path(value['config']['base']),self.root)
+            self.assertEqual(s.validate_base(str(self.root)),self.root)
 
     def test_enable_is_scheduled_not_immediate(self):
         value=s.save({'cleanup_enabled':True,'interval_hours':3},confirm_cleanup=True)

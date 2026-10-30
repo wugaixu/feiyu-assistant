@@ -179,5 +179,42 @@ class BurstMergeTests(unittest.TestCase):
         self.assertEqual(dispatch_one(self.db,self.runner(calls),'C:/codex.exe')['task_id'],'a'*32)
 
 
+    def test_text_delivers_after_five_seconds_on_each_transport(self):
+        for channel,device in [('sdk',None),('whale','device'),('qq','qq:123456789:987654321')]:
+            with self.subTest(channel=channel):
+                self.db.execute('DELETE FROM live_tasks')
+                if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='chat_dispatch'").fetchone():
+                    self.db.execute('DELETE FROM chat_dispatch')
+                self.db.commit()
+                now=time.time();calls=[]
+                self.add_text('a'*32,now-5,'hello',transport=channel,device=device)
+                with patch.object(ed.time,'time',return_value=now):
+                    self.assertEqual(dispatch_one(self.db,self.runner(calls),'C:/codex.exe')['status'],'queued')
+                self.assertEqual(len(calls),1)
+
+    def test_latest_text_restarts_five_second_wait(self):
+        now=time.time()
+        self.add_text('a'*32,now-8,'first');self.add_text('b'*32,now-4.9,'second')
+        with patch.object(ed.time,'time',return_value=now):self.assertIsNone(dispatch_one(self.db,self.runner([]),'C:/codex.exe'))
+        calls=[]
+        with patch.object(ed.time,'time',return_value=now+.1):self.assertEqual(dispatch_one(self.db,self.runner(calls),'C:/codex.exe')['status'],'queued')
+        self.assertEqual(len(calls),1)
+
+    def test_text_with_saved_media_still_waits_ten_seconds(self):
+        now=time.time();self.add_text('a'*32,now-7,'caption')
+        with self.db:
+            self.db.execute('INSERT INTO media_records VALUES(?,?,?,?,?,?)',('media','owner',now-9,'image',json.dumps({'kind':'image','status':'saved'}),'a'*32))
+        with patch.object(ed.time,'time',return_value=now):self.assertIsNone(dispatch_one(self.db,self.runner([]),'C:/codex.exe'))
+        with patch.object(ed.time,'time',return_value=now+3):self.assertEqual(dispatch_one(self.db,self.runner([]),'C:/codex.exe')['status'],'queued')
+
+    def test_transcribed_voice_is_not_plain_text(self):
+        now=time.time();self.add_text('a'*32,now-7,'voice transcript')
+        with self.db:
+            raw={'kind':'voice_transcript','original_kind':'audio','transport':'qq','reply_device':'qq:123456789:987654321'}
+            self.db.execute('UPDATE live_tasks SET raw_json=?',(json.dumps(raw),))
+        with patch.object(ed.time,'time',return_value=now):self.assertIsNone(dispatch_one(self.db,self.runner([]),'C:/codex.exe'))
+
+
+
 if __name__ == '__main__':
     unittest.main()

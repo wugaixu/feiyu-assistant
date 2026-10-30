@@ -1645,18 +1645,22 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
   });
 
 
-  var managerLoaded=false,managerVisible=false,managerReady=false,managerLoadTimer=null;
+  var managerLoaded=false,managerVisible=false,managerReady=false,managerLoadTimer=null,managerProbeTimer=null;
   function managerNotice(text){
     var notice=document.getElementById('managerNotice');
     if(!notice){notice=document.createElement('div');notice.id='managerNotice';notice.style.cssText='padding:16px;color:#d7e5fc;font-size:14px;line-height:1.6';document.getElementById('managerOverlay').insertBefore(notice,document.getElementById('managerFrame'));}
     notice.textContent=text;notice.hidden=!text;
+    var fallback=document.getElementById('managerFallback');
+    if(!fallback){fallback=document.createElement('button');fallback.id='managerFallback';fallback.textContent='单独打开管理台';fallback.style.cssText='margin:0 16px 12px;padding:12px;border:1px solid #49668b;border-radius:10px;background:#1b2940;color:#d7e5fc';fallback.onclick=function(){location.href=managerUrl();};document.getElementById('managerOverlay').insertBefore(fallback,document.getElementById('managerFrame'));}
+    fallback.hidden=!text||text.indexOf('未能加载')<0;
   }
+  function managerUrl(){return '/api/wechat/assistant/manager?device='+encodeURIComponent(deviceId)+'&reload='+Date.now();}
   function reloadManager(){
-    clearTimeout(managerLoadTimer);managerReady=false;managerLoaded=true;
+    clearTimeout(managerLoadTimer);clearTimeout(managerProbeTimer);managerReady=false;managerLoaded=true;
     managerNotice('正在连接管理台…');
     // Assign src rather than accessing an error document's location: Android
     // WebView error pages may have an opaque origin and reject location.reload.
-    document.getElementById('managerFrame').src='/api/wechat/assistant/manager?device='+encodeURIComponent(deviceId)+'&reload='+Date.now();
+    document.getElementById('managerFrame').src=managerUrl();
     managerLoadTimer=setTimeout(function(){
       if(!managerReady){managerLoaded=false;managerNotice('管理台未能加载，聊天不受影响。请点击右上角 ↻ 重试。');}
     },15000);
@@ -1664,12 +1668,18 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
   function openManager(){
     closePopovers();setVoiceMode(false);var frame=document.getElementById('managerFrame');
     if(!managerLoaded||!managerReady)reloadManager();
+    else{
+      // A cached frame may have died while the gateway was offline.
+      managerReady=false;clearTimeout(managerProbeTimer);
+      managerProbeTimer=setTimeout(function(){if(managerVisible&&!managerReady)reloadManager();},2000);
+      try{frame.contentWindow.postMessage({type:'whale-manager-ping'},location.origin);}catch(e){reloadManager();}
+    }
     document.getElementById('managerOverlay').hidden=false;managerVisible=true;notifyManager();
     ['topbar','msgs','inputbar'].forEach(function(id){document.getElementById(id).inert=true;});
     if(!history.state||!history.state.whaleManager)history.pushState({whaleManager:true},'',location.href);
   }
   function closeManager(fromHistory){
-    if(!managerVisible)return;document.getElementById('managerOverlay').hidden=true;managerVisible=false;notifyManager();
+    if(!managerVisible)return;clearTimeout(managerProbeTimer);document.getElementById('managerOverlay').hidden=true;managerVisible=false;notifyManager();
     ['topbar','msgs','inputbar'].forEach(function(id){document.getElementById(id).inert=false;});
     if(!fromHistory&&history.state&&history.state.whaleManager)history.back();
   }
@@ -1677,14 +1687,15 @@ window.__WECHAT_CLIENT__ = __WECHAT_CLIENT_VALUE__;
   document.getElementById('managerFrame').addEventListener('load',notifyManager);
   document.getElementById('managerBack').addEventListener('click',function(){closeManager();});
   document.getElementById('managerReload').addEventListener('click',function(){
-    if(managerReady){document.getElementById('managerFrame').contentWindow.postMessage({type:'whale-manager-reload'},location.origin);}
-    else reloadManager();
+    // Explicit retry must create a fresh document even if an old ready flag
+    // survived. Posting to a dead frame is silently ignored by WebView.
+    reloadManager();
   });
   window.addEventListener('popstate',function(){closeManager(true);});
   window.addEventListener('message',function(e){
     var frame=document.getElementById('managerFrame');
     if(e.origin!==location.origin||e.source!==frame.contentWindow||!e.data)return;
-    if(e.data.type==='whale-manager-ready'){managerReady=true;managerLoaded=true;clearTimeout(managerLoadTimer);managerNotice('');notifyManager();}
+    if(e.data.type==='whale-manager-ready'){managerReady=true;managerLoaded=true;clearTimeout(managerLoadTimer);clearTimeout(managerProbeTimer);managerNotice('');notifyManager();}
     if(e.data.type==='whale-close-manager')closeManager();
   });
   function closePopovers(){closeTextSheet();closeVoiceSheet();hideAvatarMenu();hideNickDialog();document.getElementById('selectionDialog').hidden=true;document.getElementById('selectionMask').classList.remove('show');}

@@ -24,8 +24,10 @@ ATTACH_WINDOW_SECONDS = 10
 # the standalone-media path uses the same 10 seconds before delivering alone.
 ATTACH_FORWARD_SECONDS = 10
 # A burst of owner messages is delivered once, after the source has been quiet
-# for this long; every new message restarts the quiet window.
+# for this long when media is involved; plain text uses TEXT_QUIET_SECONDS.
+# Every new message restarts its turn's quiet window.
 BURST_QUIET_SECONDS = 10
+TEXT_QUIET_SECONDS = 5
 
 
 def _source_of(raw):
@@ -71,6 +73,22 @@ def _burst_chain(db,owner,transport,device,latest):
     while left and float(nodes[left][0][2])-nodes[left-1][1]<=BURST_QUIET_SECONDS:left-=1
     while right+1<len(nodes) and float(nodes[right+1][0][2])-nodes[right][1]<=BURST_QUIET_SECONDS:right+=1
     return [row for row,_ in nodes[left:right+1] if row[0] not in unavailable]
+
+
+
+def _quiet_seconds(db,chain):
+    """Only a wholly textual turn gets the shorter wait; media keeps its grace."""
+    for task_id,raw,received,status in chain:
+        value=json.loads(raw)
+        messages=[value]+list(value.get('merged_messages') or [])
+        for message in messages:
+            if (message.get('kind')!='text' or message.get('original_kind') not in (None,'text')
+                or any(message.get(key) for key in ('upload','media_record_id','received_media'))):
+                return BURST_QUIET_SECONDS
+        # A retried merged task can keep kind=text while owning media records.
+        if db.execute('SELECT 1 FROM media_records WHERE id=? OR attached_to=? LIMIT 1',(task_id,task_id)).fetchone():
+            return BURST_QUIET_SECONDS
+    return TEXT_QUIET_SECONDS
 
 
 def _merge_burst(db,row,transport,device,latest):
@@ -236,7 +254,7 @@ def dispatch_one(db, runner=None, executable=None):
         if not chain or any(item[3]=='media_pending' for item in chain):continue
         # A long chain is one turn even when its first-to-last span exceeds 10s.
         tail=max(float(item[2]) for item in chain)
-        if time.time()-max(tail,float(last_received))<BURST_QUIET_SECONDS:continue
+        if time.time()-max(tail,float(last_received))<_quiet_seconds(db,chain):continue
         pending=next((item for item in chain if item[3]=='pending'),None)
         if not pending:continue
         row=(pending[0],candidate[1],pending[1],pending[2])
@@ -310,7 +328,9 @@ def dispatch_one(db, runner=None, executable=None):
         # A message can arrive while checking host availability. Recheck under
         # the reservation lock so this turn does not cut off a fresh supplement.
         if _source_latest(db,row[1],transport,device)!=last_received:return None
-        if any(item[3]=='media_pending' for item in _burst_chain(db,row[1],transport,device,last_received)):return None
+        current_chain=_burst_chain(db,row[1],transport,device,last_received)
+        if any(item[3]=='media_pending' for item in current_chain):return None
+        if time.time()-float(last_received)<_quiet_seconds(db,current_chain):return None
         raw=json.loads(row[2])
         if raw.get('is_group'):
             from app import group_chats

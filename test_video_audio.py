@@ -12,6 +12,7 @@ class VideoAudioTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(dir=audio.ROOT);self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name);self.source=self.root/'clip.mp4';self.source.write_bytes(b'fixture')
+        root_patch=patch.object(audio,'ROOT',self.root);root_patch.start();self.addCleanup(root_patch.stop)
         self.record={'task_id':'audio','status':'saved','manifest_path':str(self.root/'manifest.json'),'files':[{'path':str(self.source),'status':'saved','decode_verified':True}]}
 
     def runner(self,argv,**kw):

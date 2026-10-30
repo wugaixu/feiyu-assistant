@@ -6,7 +6,7 @@
 
 ```powershell
 python deploy/doctor.py --runtime-dir D:\FeiyuData
-cd D:\FeiyuData\installed\0.3.0
+cd D:\FeiyuData\installed\0.3.1
 python -m unittest discover -q
 node --test test_whale_bridge.mjs test_whale_standalone.mjs test_whale_pairing.mjs test_whale_upload.mjs
 node --test dsh_bridge/test.mjs
@@ -62,3 +62,10 @@ node test_whale_voice_order.cjs
 - 凭据/私有运行资料扫描无命中；签名文件、模型权重、数据库和聊天内容未复制。
 - Android源码同步既有1.5.3恢复修复；本轮未构建或安装APK。
 - 生产只读检查确认管理台、SDK、鲸聊和主AstrBot可访问；不表示每条历史消息送达。本轮未重启生产、未对外试发。
+
+
+## v0.3.1 发布前验证（2026-10-30）
+
+全新隔离目录经configure.py配置：602项Python检查，2项因可选依赖/权限条件跳过，其余通过；23项Node协议/网关检查、七套UI脚本通过。新增测试覆盖纯文字5秒边界、媒体仍10秒、语音转写不冒充纯文本、各通道一致；手机管理页失效后的强制刷新、重新打开存活检查、超时备用入口以及同源窗口校验。
+
+真实公网移动尺寸浏览器复现旧页刷新失败并验证新页恢复；用户随后确认手机管理台恢复。代码与源码清单检查通过，私有路径、账号及凭据扫描无命中。不发布私信、数据库、Cookie、配对密钥或本地模型权重；本次仅源代码更新，无新APK构建。

@@ -2,8 +2,8 @@
 import hashlib,json,os,re,shutil,sqlite3,threading,time,uuid
 from pathlib import Path
 
-RUNTIME=Path(r'__RUNTIME_ROOT__')
-TEMP_PARENT=RUNTIME.parent
+RUNTIME=Path(r'__RUNTIME_ROOT__').resolve()
+TEMP_PARENT=Path(r'__TEMP_PARENT__')
 CONFIG=RUNTIME/'resource-storage.json'
 STATE=RUNTIME/'resource-cleanup-state.json'
 PREVIEW=RUNTIME/'resource-cleanup-preview.json'
@@ -30,6 +30,8 @@ def atomic(path,value):
 def config():
     value=read(CONFIG,{})
     if not isinstance(value,dict):value={}
+    if isinstance(value.get('base'),str) and Path(value['base']).resolve()==RUNTIME.resolve():
+        value={**value,'base':str(RUNTIME)}
     return {'base':str(RUNTIME),'previous_bases':[],'cleanup_enabled':False,'retention_days':30,
             'interval_hours':24,'categories':list(FOLDERS)+['outgoing'],'next_run_at':None,**value}
 
@@ -39,7 +41,7 @@ def bases():
 
 def resource_dirs(kind,legacy_root=None):
     if kind not in FOLDERS:raise ValueError('Unknown resource category')
-    if legacy_root is not None and Path(legacy_root)!=RUNTIME:return [Path(legacy_root)/FOLDERS[kind]]
+    if legacy_root is not None and Path(legacy_root).resolve()!=RUNTIME.resolve():return [Path(legacy_root)/FOLDERS[kind]]
     return [base/FOLDERS[kind] for base in bases()]
 
 def resource_dir(kind,legacy_root=None):return resource_dirs(kind,legacy_root)[0]
@@ -54,6 +56,9 @@ def validate_base(value):
     path=Path(value.strip())
     if not path.is_absolute() or '..' in path.parts:raise ValueError('请选择绝对路径，不允许上级目录符号')
     resolved=path.resolve()
+    # The installed runtime is a durable root; only additional resource roots
+    # must stay under the shared temporary workspace. Accept its legacy alias.
+    if resolved==RUNTIME.resolve():return resolved
     if resolved==TEMP_PARENT.resolve() or not resolved.is_relative_to(TEMP_PARENT.resolve()):
         raise ValueError('资源目录须位于 __TEMP_PARENT__ 下的独立文件夹')
     if resolved!=RUNTIME.resolve() and resolved.is_relative_to(RUNTIME.resolve()):

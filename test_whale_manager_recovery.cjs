@@ -8,7 +8,7 @@ const frame=element('managerFrame');
 Object.defineProperty(frame,'src',{set(v){navigations++;this.url=v;}});
 frame.contentWindow={postMessage(){}};
 Object.defineProperty(frame.contentWindow,'location',{get(){throw Error('opaque WebView error origin');}});
-const c={document:{getElementById:element,createElement:()=>({style:{}})},window:{addEventListener(t,fn){events[t]=fn;}},location:{origin:'https://test.invalid'},history:{state:{whaleManager:true}},deviceId:'test',closePopovers(){},setVoiceMode(){},
+const c={document:{getElementById(id){return ['managerNotice','managerFallback'].includes(id)?elements.get(id)||null:element(id);},createElement:()=>({style:{}})},window:{addEventListener(t,fn){events[t]=fn;}},location:{origin:'https://test.invalid'},history:{state:{whaleManager:true}},deviceId:'test',closePopovers(){},setVoiceMode(){},
 setTimeout(fn){timers.set(++tick,fn);return tick;},clearTimeout(id){timers.delete(id);},Date,encodeURIComponent};
 vm.createContext(c);vm.runInContext(html.slice(start,end),c);
 c.openManager();assert.equal(navigations,1);assert.match(element('managerNotice').textContent,/正在连接/);
@@ -16,7 +16,26 @@ c.openManager();assert.equal(navigations,1);assert.match(element('managerNotice'
 c.openManager();assert.equal(navigations,2,'reopening failed frame must retry');
 events.message({origin:c.location.origin,source:frame.contentWindow,data:{type:'whale-manager-ready'}});
 assert.equal(c.managerReady,true);assert.equal(element('managerNotice').hidden,true);
-c.closeManager(true);c.openManager();assert.equal(navigations,2,'healthy frame is preserved');
-c.managerReady=false;events['managerReload:click']();assert.equal(navigations,3,'retry must not touch opaque error location');
+c.closeManager(true);c.openManager();assert.equal(navigations,2,'healthy frame is preserved while checking liveness');
+assert.equal(c.managerReady,false,'reopening probes live readiness instead of trusting the old flag');
+events.message({origin:c.location.origin,source:frame.contentWindow,data:{type:'whale-manager-ready'}});
+assert.equal(c.managerReady,true);assert.equal(navigations,2,'healthy pong avoids navigation');
+events['managerReload:click']();assert.equal(navigations,3,'explicit refresh replaces even a formerly ready document');
+assert.equal(c.managerReady,false);
+events.message({origin:c.location.origin,source:frame.contentWindow,data:{type:'whale-manager-ready'}});
+c.closeManager(true);c.openManager();
+[...timers.values()][0]();assert.equal(navigations,4,'unresponsive cached frame is replaced after probe timeout');
+[...timers.values()].at(-1)();assert.equal(element('managerFallback').hidden,false,'failed iframe offers standalone same-origin management');
+element('managerFallback').onclick();assert.match(c.location.href,/^\/api\/wechat\/assistant\/manager\?device=test&reload=/);
 events.message({origin:'https://evil.invalid',source:frame.contentWindow,data:{type:'whale-manager-ready'}});assert.equal(c.managerReady,false);
-console.log('Manager frame: failed loads retry, opaque errors recover, healthy pages persist, foreign ready signals rejected');
+events.message({origin:c.location.origin,source:{},data:{type:'whale-manager-ready'}});assert.equal(c.managerReady,false);
+console.log('Manager frame: hard refresh replaces dead pages; liveness preserves responsive pages; timeout fallback and origin checks passed');
+// Child heartbeat is scoped to its actual same-origin parent.
+const consoleSource=fs.readFileSync('app/console.html','utf8');let handler,sent=0;
+const parent={postMessage(value,origin){assert.equal(value.type,'whale-manager-ready');assert.equal(origin,'https://test.invalid');sent++;}};
+const child={parent,location:{origin:'https://test.invalid'},window:{__WHALE_REMOTE__:true,addEventListener(type,fn){handler=fn;}}};
+vm.createContext(child);const begin=consoleSource.indexOf("window.addEventListener('message',e=>{");const finish=consoleSource.indexOf("window.addEventListener('beforeunload'",begin);
+vm.runInContext(consoleSource.slice(begin,finish),child);
+handler({origin:'https://test.invalid',source:parent,data:{type:'whale-manager-ping'}});assert.equal(sent,1);
+handler({origin:'https://evil.invalid',source:parent,data:{type:'whale-manager-ping'}});assert.equal(sent,1);
+handler({origin:'https://test.invalid',source:{},data:{type:'whale-manager-ping'}});assert.equal(sent,1);

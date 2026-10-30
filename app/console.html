@@ -208,6 +208,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkUiVer
 setInterval(checkUiVersion,15000);
 window.addEventListener('message',e=>{
  if(!window.__WHALE_REMOTE__||e.source!==parent||e.origin!==location.origin)return;
+ if(e.data?.type==='whale-manager-ping'){parent.postMessage({type:'whale-manager-ready'},location.origin);return;}
  if(e.data?.type==='whale-manager-reload'){refreshUi();return;}
  if(e.data?.type!=='whale-manager-visibility')return;
  remotePaused=e.data.visible!==true;if(remotePaused)clearTimeout(timer);else if(!settingsDirty)load();
@@ -255,7 +256,7 @@ const PROVIDER_LABEL={codex:"Codex",dsh:"DSH",astrbot:"AstrBot"};
 const ASTRBOT_URL="http://127.0.0.1:6185/";
 function workflowFlowHtml(provider){
  const name=PROVIDER_LABEL[provider]||'待选择';
- return `<section class="pipeline"><b>消息如何处理</b><div class="pipeline-steps"><span class="pipeline-node">抖音 SDK / 鲸聊网关 / QQ NapCat</span><span class="pipeline-arrow">→</span><span class="pipeline-node">身份核验 · 去重 · 本地队列</span><span class="pipeline-arrow">→</span><span class="pipeline-node">图片 / 视频 / 语音资料整理</span><span class="pipeline-arrow">→</span><span class="pipeline-node">${esc(name)} 分析与回复</span><span class="pipeline-arrow">→</span><span class="pipeline-node">原通道 · 原设备</span></div><div class="muted">视频与图集：DouK 保存作品 → 画面、评论与音频资料 → AI 分析。独立媒体等待 10 秒关联后续文字。<br>语音回复：AstrBot 提供合成文字 → GPT-SoVITS 生成音频 → 鲸聊或 QQ 语音消息；鲸聊可展开合成原文。<br>作品公开评论是独立发布分支，按授权和开关执行；自主活动通过私信分享作品。日常收发不依赖网页抖音，也不依赖 DSH 进程；仅选择 DSH 处理消息时需要 DSH 在线。</div></section>`;
+ return `<section class="pipeline"><b>消息如何处理</b><div class="pipeline-steps"><span class="pipeline-node">抖音 SDK / 鲸聊网关 / QQ NapCat</span><span class="pipeline-arrow">→</span><span class="pipeline-node">身份核验 · 去重 · 本地队列</span><span class="pipeline-arrow">→</span><span class="pipeline-node">图片 / 视频 / 语音资料整理</span><span class="pipeline-arrow">→</span><span class="pipeline-node">${esc(name)} 分析与回复</span><span class="pipeline-arrow">→</span><span class="pipeline-node">原通道 · 原设备</span></div><div class="muted">视频与图集：DouK 保存作品 → 画面、评论与音频资料 → AI 分析。纯文字连续 5 秒无新消息后投递；含图片、语音、视频或文件的消息等待 10 秒关联后续文字。<br>语音回复：AstrBot 提供合成文字 → GPT-SoVITS 生成音频 → 鲸聊或 QQ 语音消息；鲸聊可展开合成原文。<br>作品公开评论是独立发布分支，按授权和开关执行；自主活动通过私信分享作品。日常收发不依赖网页抖音，也不依赖 DSH 进程；仅选择 DSH 处理消息时需要 DSH 在线。</div></section>`;
 }
 function voiceCapabilitiesHtml(voice){
  if(!voice)return '<section class="card"><h3>语音回复</h3><div class="muted">语音状态暂未取得，请刷新状态。</div></section>';
