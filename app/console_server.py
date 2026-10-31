@@ -26,6 +26,7 @@ from pathlib import Path
 
 ROOT = Path(r'__RUNTIME_ROOT__')
 PROJECT = Path(__file__).resolve().parents[1]
+CODEX_WORKSPACE = Path(r'__CODEX_WORKSPACE__')
 STATE_DB = Path(r'__CODEX_HOME__\state_5.sqlite')
 ASSISTANT_DB = ROOT / 'assistant.sqlite3'
 TARGET_FILE = ROOT / 'dispatch-target.json'
@@ -276,7 +277,7 @@ def read_threads(limit=200):
     def normal(value):
         value=re.sub(r'\\+',lambda _: '\\',str(value or ''))
         return ntpath.normcase(ntpath.normpath(value.removeprefix('\\?\\')))
-    base=normal(PROJECT.parent)
+    base=normal(CODEX_WORKSPACE)
     project_ids={key for key,value in state.get('local-projects',{}).items()
         if any(normal(root)==base for root in value.get('rootPaths',[]))}
     assignments=state.get('thread-project-assignments',{})
@@ -337,7 +338,6 @@ def codex_title(thread_id):
 
 def target_state():
     config = _read_json(TARGET_FILE, {}) or {}
-    candidates = [c for c in config.get('candidates', []) if isinstance(c, str) and THREAD_RE.fullmatch(c)]
     effective, reason = None, 'default'
     try:
         from app.event_dispatch import choose_thread
@@ -361,9 +361,8 @@ def target_state():
             'astrbot':{'session_id':astrbot.get('session_id'),'config_id':astrbot.get('config_id','default')},
             'astrbot_session_id':astrbot.get('session_id'),'astrbot_config_id':astrbot.get('config_id','default'),
             'effective_title':title,
-            'workspace':'__CODEX_WORKSPACE__',
-            'mode': config.get('mode', 'most_recent'), 'candidates': candidates,
-            'fallback_thread_id': config.get('fallback_thread_id'),
+            'workspace':str(CODEX_WORKSPACE),
+            'mode': 'explicit',
             'explicit_thread_id': config.get('thread_id'), 'effective': effective, 'reason': reason}
 
 
@@ -401,6 +400,8 @@ def tasks_state(limit=30):
     try:
         db = _assistant_db()
         try:
+            from app.queue_maintenance import resolutions
+            maintenance=resolutions(db)
             for row in db.execute('SELECT status,count(*) FROM live_tasks GROUP BY status'):
                 result['counts'][row[0]] = row[1]
             for row in db.execute('SELECT id,status,received,raw_json FROM live_tasks ORDER BY received DESC LIMIT ?', (limit,)):
@@ -409,7 +410,7 @@ def tasks_state(limit=30):
                 except ValueError:
                     message = {}
                 result['items'].append({'id': row['id'], 'status': row['status'], 'received': row['received'],
-                                        'kind': message.get('kind'),
+                                        'kind': message.get('kind'),'maintenance':maintenance.get(('task',row['id'])),
                                         'text': ' '.join(str(message.get('raw_text') or '').split())[:110]})
         finally:
             db.close()
@@ -466,7 +467,7 @@ def outbound_state(limit=30):
                 # Legacy receipt-only rows lack a live task; classify their SDK receipt.
                 if channel=='douyin' and not receipt and row['status'] in ('pending','attempted'):
                     if not db.execute("SELECT 1 FROM sqlite_master WHERE name='live_tasks'").fetchone():channel='unknown'
-            if row['status'] in ('pending','attempted'):verdict=row['status']
+            if row['status'] in ('pending','attempted','cancelled','superseded'):verdict=row['status']
             elif channel=='qq':
                 verdict='server_accepted' if row['status']=='server_accepted' and receipt.get('message_id') else 'outcome_uncertain'
             elif channel=='whale':
@@ -487,6 +488,12 @@ def outbound_state(limit=30):
             if observation=='missing' or (observation not in ('confirmed','deferred') and verdict in ('outcome_uncertain','platform_not_accepted','attempted')):state['alerts'].append(entry)
     except sqlite3.Error:pass
     finally:db.close()
+    from app.queue_maintenance import resolutions,resolved
+    with closing(_assistant_db()) as db:maintenance=resolutions(db)
+    for item in state['items']:
+        item['maintenance']=maintenance.get(('send',item['id']))
+        item['resolved']=resolved(item['stored_status'],item['maintenance'])
+    state['alerts']=[x for x in state['alerts'] if not x['resolved']]
     for item in state['items']:item['assessment']=automatic([item]+[x for x in state['items'] if x is not item])
     return state
 
@@ -513,41 +520,15 @@ def overview_state():
 
 # ----------------------------------------------------------------- actions
 def set_target(action, thread_id=None):
-    if thread_id is not None and not THREAD_RE.fullmatch(thread_id):
-        raise ValueError('invalid thread id')
+    """Legacy fixed-selection endpoint; automatic targeting has been removed."""
+    if action != 'pin':
+        raise ValueError('自动跟随与候选范围已移除，请固定选择 已配置工作区 会话')
+    if not isinstance(thread_id,str) or thread_id not in {t['id'] for t in read_threads()}:
+        raise ValueError('请选择 已配置工作区 项目内的未归档会话')
     config = _read_json(TARGET_FILE, {}) or {}
-    if not isinstance(config, dict):
-        config = {}
-    candidates = [c for c in config.get('candidates', []) if isinstance(c, str)]
-    allowed={t['id'] for t in read_threads()}
-    if action in ('pin','candidate_add','fallback') and thread_id not in allowed:
-        raise ValueError('请选择 Work 1 项目内的未归档会话')
-    config.setdefault('fallback_thread_id', DEFAULT_THREAD)
-    config.setdefault('state_db', str(STATE_DB))
-    if action == 'auto':
-        candidates=[c for c in candidates if c in allowed]
-        if not candidates:raise ValueError('请先在 Work 1 中选择自动跟随的候选会话')
-        if config.get('fallback_thread_id') not in allowed:config['fallback_thread_id']=candidates[0]
-        config['mode'] = 'most_recent'
-        config.pop('thread_id', None)
-    elif action == 'pin':
-        if thread_id not in candidates:
-            candidates.append(thread_id)
-        config['mode'] = 'explicit'
-        config['thread_id'] = thread_id
-    elif action == 'candidate_add':
-        if thread_id not in candidates:
-            candidates.append(thread_id)
-    elif action == 'candidate_remove':
-        candidates = [c for c in candidates if c != thread_id]
-        if config.get('mode') == 'explicit' and config.get('thread_id') == thread_id:
-            config['mode'] = 'most_recent'
-            config.pop('thread_id', None)
-    elif action == 'fallback':
-        config['fallback_thread_id'] = thread_id
-    else:
-        raise ValueError('unknown target action')
-    config['candidates'] = candidates
+    config.update(mode='explicit',thread_id=thread_id)
+    config.pop('candidates',None)
+    config.pop('fallback_thread_id',None)
     _atomic_json(TARGET_FILE, config)
     return target_state()
 
@@ -637,11 +618,11 @@ def set_agent(provider,session_id=None,config_id=None):
         config['astrbot']={'session_id':session_id,'config_id':config_id}
     elif session_id is not None:
         if not isinstance(session_id,str) or session_id not in {t['id'] for t in read_threads()}:
-            raise ValueError('请选择 Work 1 项目内的未归档会话')
+            raise ValueError('请选择 已配置工作区 项目内的未归档会话')
         config['mode']='explicit'
         config['thread_id']=session_id
-        candidates=config.get('candidates',[])
-        config['candidates']=list(dict.fromkeys([*candidates,session_id]))
+        config.pop('candidates',None)
+        config.pop('fallback_thread_id',None)
     config['provider']=provider
     if previous!=(provider,config.get('astrbot',{})):
         import uuid
@@ -708,6 +689,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, overview_state())
             elif path == '/api/app/ping':
                 self._send(200, {'ok': True, 'pid': os.getpid(), 'ui_revision': ui_document()[1], 'local_image_batch_version': 1, 'whale_channel_version':1, 'whale_audio_version':1})
+            elif path == '/api/qq':
+                from app import qq_channel
+                self._send(200,qq_channel.maintenance_state())
             elif path == '/api/channels':
                 from app import whale_channel
                 with closing(sqlite3.connect(ASSISTANT_DB,timeout=3)) as db:
@@ -727,6 +711,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200,activity_state(activity_db))
             elif path == '/api/agents/astrbot':
                 self._send(200,astrbot_state())
+            elif path == '/api/maintenance':
+                from app.queue_maintenance import state
+                with closing(_assistant_db()) as db:self._send(200,state(db))
             elif path == '/api/tasks':
                 self._send(200, tasks_state())
             elif path == '/api/outbound':
@@ -774,7 +761,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/whale-bridge' or bridge_token:
             if not whale_channel.authenticate(bridge_token,bridge_device,management=path!='/api/whale-bridge') or (path!='/api/whale-bridge' and path not in whale_channel.POST_ROUTES):
                 self._send(403,{'error':'Whale bridge denied'});return
-        guarded = path.startswith('/api/storage') or path.startswith('/api/astrbot') or path in ('/api/agent','/api/review','/api/comment-login','/api/activity','/api/local-image','/api/channels','/api/qq','/api/whale-bridge','/api/groups')
+        guarded = path.startswith('/api/storage') or path.startswith('/api/astrbot') or path in ('/api/maintenance','/api/agent','/api/review','/api/comment-login','/api/activity','/api/local-image','/api/channels','/api/qq','/api/whale-bridge','/api/groups')
         if guarded:
             origin=self.headers.get('Origin')
             if self.headers.get('Host') not in ('127.0.0.1:8793','localhost:8793') or (origin and origin not in ('http://127.0.0.1:8793','http://localhost:8793')) or 'application/json' not in self.headers.get('Content-Type',''):
@@ -818,6 +805,10 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/api/comment-login':
                 from app.comment_login import start
                 self._send(200,start(_stop))
+            elif path == '/api/maintenance':
+                from app.queue_maintenance import apply
+                with closing(sqlite3.connect(ASSISTANT_DB,timeout=3)) as db:
+                    self._send(200,apply(db,body.get('kind'),body.get('id'),body.get('action'),body.get('expected_status'),body.get('note','')))
             elif path == '/api/review':
                 raise ValueError('人工核验入口已停用，程序自动根据回执和已有反馈判断')
             elif path == '/api/activity':

@@ -66,34 +66,21 @@ class TargetSelectionTests(unittest.TestCase):
         db.commit()
         db.close()
 
-    def test_most_recent_follows_the_last_active_window(self):
-        self.configure(mode='most_recent', candidates=[self.A, self.B], fallback_thread_id=self.A)
-        self.activity([(self.A, 100, 0, 'x'), (self.B, 900, 0, 'y')])
-        self.assertEqual(thread_id(), self.B)
-        # Once the other window becomes the most recent one, delivery moves with it.
-        self.activity([(self.A, 1000, 0, 'x'), (self.B, 900, 0, 'y')])
-        self.assertEqual(thread_id(), self.A)
-
-    def test_archived_candidate_is_not_selected(self):
-        self.configure(mode='most_recent', candidates=[self.A, self.B], fallback_thread_id=self.A)
-        self.activity([(self.A, 100, 0, 'x'), (self.B, 900, 1, 'y')])
-        self.assertEqual(thread_id(), self.A)
-
-    def test_unreadable_activity_falls_back_instead_of_guessing(self):
-        self.configure(mode='most_recent', candidates=[self.A, self.B], fallback_thread_id=self.B)
-        report = ed.choose_thread()
-        self.assertEqual(report['thread_id'], self.B)
-        self.assertEqual(report['reason'], 'activity_unavailable')
-
+    def test_legacy_auto_never_follows_activity(self):
+        self.configure(mode='most_recent',thread_id=self.A,candidates=[self.A,self.B],fallback_thread_id=self.B)
+        self.activity([(self.A,100,0,'x'),(self.B,900,0,'y')])
+        self.assertEqual(thread_id(),self.A)
+    def test_missing_selection_never_uses_candidates_or_fallback(self):
+        self.configure(mode='most_recent',candidates=[self.A,self.B],fallback_thread_id=self.B)
+        self.assertIsNone(thread_id())
+        self.assertEqual(choose_report_reason(),'selection_required')
     def test_explicit_mode_pins_one_window(self):
-        self.configure(mode='explicit', thread_id=self.B)
-        self.activity([(self.A, 1000, 0, 'x'), (self.B, 1, 0, 'y')])
-        self.assertEqual(choose_report_reason(), 'explicit')
-        self.assertEqual(thread_id(), self.B)
-
+        self.configure(mode='explicit',thread_id=self.B)
+        self.activity([(self.A,1000,0,'x'),(self.B,1,0,'y')])
+        self.assertEqual(thread_id(),self.B)
     def test_invalid_config_cannot_redirect_delivery(self):
-        self.config.write_text('{"mode":"most_recent","candidates":["not-a-thread"]}', encoding='utf-8')
-        self.assertEqual(thread_id(), ed.DEFAULT_THREAD_ID)
+        self.config.write_text('{"thread_id":"not-a-thread"}',encoding='utf-8')
+        self.assertIsNone(thread_id())
 
 
 def choose_report_reason():

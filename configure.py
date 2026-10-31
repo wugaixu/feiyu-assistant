@@ -1,7 +1,7 @@
 """Compile a relocatable deployment from this clean source snapshot; never start services."""
 import argparse,json,os,re,secrets,shutil,sys
 from pathlib import Path
-VERSION='0.3.1'
+VERSION='0.3.2'
 REPO=Path(__file__).resolve().parent
 
 def safe_path(value):
@@ -47,7 +47,7 @@ def configure(cfg):
       'local-image.json':{'enabled':False,'idle_minutes':10},
       'gpt-sovits.json':{'enabled':False,'voice_id':'dafeiyu','idle_minutes':5},
       'whale-channel.json':{'installed':True,'standalone':True,'enabled':True,'remote_management':False,'devices':[],'network':{'mode':'disabled'}},
-      'dispatch-target.json':{'provider':'codex','mode':'explicit','thread_id':None,'candidates':[],'state_db':str(safe_path(cfg.get('codex_home') or user/'.codex')/'state_5.sqlite')},
+      'dispatch-target.json':{'provider':'codex','mode':'explicit','thread_id':None,'state_db':str(safe_path(cfg.get('codex_home') or user/'.codex')/'state_5.sqlite')},
       'dsh-bridge.json':{'token':secrets.token_hex(32)},
     }
     for name,value in defaults.items():

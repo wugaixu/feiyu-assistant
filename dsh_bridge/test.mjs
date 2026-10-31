@@ -52,3 +52,8 @@ test('authenticated existing-session enqueue, persistent receipt and failure han
     assert.equal(calls,3); // missing legacy preset is rejected before reservation/model execution.
   } finally {server.close();server.closeAllConnections();await once(server,'close');rmSync(root,{recursive:true,force:true});}
 });
+
+test('workspace archive registry excludes sessions even when summaries omit archive flags',()=>{
+ const items=[{sessionId:'active'},{sessionId:'archived'},{sessionId:'deleted',formatStatus:'migration-required'},{sessionId:'flagged',archived:true}];
+ assert.deepEqual(summaries(items,['archived']).map(x=>x.id),['active']);
+});

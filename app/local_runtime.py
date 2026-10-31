@@ -188,7 +188,7 @@ def outbound_step(db,owner):
     finished=time.time()
     with db:
         db.execute('UPDATE outbound_attempts SET finished=?,status=?,detail=? WHERE id=?',(finished,result,json.dumps(outcome,ensure_ascii=False),attempt_id))
-        db.execute("UPDATE reply_outbox SET status=?,detail=? WHERE id=?",('pending' if decision['retry'] else result,json.dumps(outcome,ensure_ascii=False),row[0]))
+        db.execute("UPDATE reply_outbox SET status=?,detail=? WHERE id=? AND status='attempted'",('pending' if decision['retry'] else result,json.dumps(outcome,ensure_ascii=False),row[0]))
         db.execute('INSERT OR REPLACE INTO outbound_retries VALUES(?,?,?,?)',(row[0],decision['attempts'],decision.get('not_before',0),result))
     try:stamp.write_text(json.dumps({'time':finished,'outbox_id':row[0]}),encoding='utf-8')
     except OSError:pass  # SQLite completion is the authoritative cooldown.

@@ -2,7 +2,7 @@
 const {readFileSync}=require('node:fs');
 const vm=require('node:vm');
 const assert=require('node:assert/strict');
-const source=readFileSync('app/console.html','utf8').split('<script>')[1].split('</script>')[0].replace(/\nrenderNav\(\);load\(\);\s*$/, '');
+const source=readFileSync('app/console.html','utf8').split('<script>')[1].split('</script>')[0].replace(/\nrenderNav\(\);load\(\);/, '');
 function setup(){
  const nodes=new Map(),timers=new Map();let next=0;
  const element=()=>({innerHTML:'',textContent:'',dataset:{},childNodes:[],classList:{add(){},remove(){}},replaceChildren(...children){this.childNodes=children;}});
@@ -25,7 +25,7 @@ function setup(){
  t=setup();t.run("api=async()=>({ui_revision:UI_REVISION})");await t.run('checkUiVersion()');assert.equal(t.ctx.reloads,0);
  t=setup();t.run("renderOverview=async el=>{await new Promise(r=>{globalThis.finishOld=r});el.childNodes=['old'];};renderTasks=async el=>{el.childNodes=['tasks'];};");
  const old=t.run('load()');t.run("current='tasks'");await t.run('load()');t.run('finishOld()');await old;
- assert.deepEqual(t.nodes.get('main').childNodes,['tasks']);
+ assert.deepEqual(t.nodes.get('main').childNodes.filter(x=>typeof x==='string'),['tasks']);
  t=setup();t.run("document.getElementById('main').childNodes=['last-good']");
  t.run("renderOverview=async()=>{throw Error('offline')}");await t.run('load()');
  assert.deepEqual(Array.from(t.nodes.get('main').childNodes),['last-good']);assert.match(t.nodes.get('load-error').innerHTML,/上次成功/);
@@ -67,8 +67,8 @@ function setup(){
  t.run("renderOverview=async el=>{el.childNodes=['cached overview'];};renderTasks=async el=>{el.childNodes=['tasks'];};");
  await t.run('load()');t.run("current='tasks'");await t.run('load()');
  t.run("current='overview';renderOverview=async el=>{await new Promise(r=>{globalThis.releaseRefresh=r;});el.childNodes=['fresh overview'];};");
- const refresh=t.run('load()');assert.deepEqual(t.nodes.get('main').childNodes,['cached overview']);
- t.run('releaseRefresh()');await refresh;assert.deepEqual(t.nodes.get('main').childNodes,['fresh overview']);
+ const refresh=t.run('load()');assert.deepEqual(t.nodes.get('main').childNodes.filter(x=>typeof x==='string'),['cached overview']);
+ t.run('releaseRefresh()');await refresh;assert.deepEqual(t.nodes.get('main').childNodes.filter(x=>typeof x==='string'),['fresh overview']);
  // Voice labels follow configuration even when the on-demand engine is idle.
  t=setup();
  let voice=t.run("voiceCapabilitiesHtml({gsv_enabled:true,gsv_reference_configured:true,gsv_voice:'大肥鱼 / OhWhale',max_audio_seconds:600,max_audio_mb:32})");

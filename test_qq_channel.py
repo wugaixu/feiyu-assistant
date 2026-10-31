@@ -7,7 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from PIL import Image
 from app import qq_channel as qq, channels, local_runtime, task_context
 from app.live_service import LiveStore
@@ -29,6 +29,57 @@ class QQTests(unittest.TestCase):
     def event(self,**patches):
         return {'self_id':987654321,'user_id':123456789,'post_type':'message','message_type':'private',
                 'message_id':-123,'time':int(self.now),'message':[{'type':'text','data':{'text':'你好'}}],**patches}
+
+    def test_health_requires_live_status_not_cached_login_info(self):
+        def response(action,**kwargs):
+            return {'online':False,'good':True} if action=='get_status' else {'user_id':self.config['account_id'],'nickname':'cached'}
+        with patch.object(qq,'api',side_effect=response):
+            h=qq.health();self.assertFalse(h['online']);self.assertTrue(h['api_reachable']);self.assertEqual(h['state'],'qq_offline')
+        with patch.object(qq,'api',side_effect=lambda action,**kwargs: {'online':True,'good':True} if action=='get_status' else {'user_id':self.config['account_id']}):
+            self.assertTrue(qq.health()['online']);self.assertTrue(qq.health()['bound'])
+
+    def test_login_status_never_returns_qr_or_webui_credentials(self):
+        nap=self.root/'napcat';(nap/'config').mkdir(parents=True)
+        (nap/'config/webui.json').write_text(json.dumps({'token':'b'*64}))
+        qq.save({**self.config,'napcat_dir':str(nap)})
+        opener=MagicMock();opener.open.side_effect=[io.BytesIO(json.dumps({'code':0,'data':{'Credential':'c'*64}}).encode()),io.BytesIO(json.dumps({'code':0,'data':{'isLogin':False,'loginPhase':'waiting_qrcode','qrcodeurl':'https://private.invalid/QR','loginError':'sensitive text'}}).encode())]
+        with patch('urllib.request.build_opener',return_value=opener):result=qq.login_status()
+        self.assertTrue(result['reachable']);self.assertTrue(result['waiting_qrcode']);self.assertTrue(result['has_login_error'])
+        for secret in ('b'*64,'c'*64,'private.invalid','sensitive text'):self.assertNotIn(secret,json.dumps(result))
+
+    def test_maintenance_distinguishes_login_api_and_account(self):
+        cases=[({'online':True,'bound':True},{'reachable':True},'ready'),
+               ({'online':True,'bound':False},{'reachable':True},'account_mismatch'),
+               ({'online':False},{'reachable':True,'waiting_qrcode':True},'login_required'),
+               ({'online':False},{'reachable':True,'logged_in':True},'api_unavailable'),
+               ({'online':False},{'reachable':False},'connection_unavailable'),
+               ({'online':False},{'reachable':True,'initializing':True},'initializing')]
+        before=(self.root/'qq-channel.json').read_bytes()
+        for health,login,expected in cases:
+            with self.subTest(expected=expected),patch.object(qq,'state',return_value={'health':health}),patch.object(qq,'login_status',return_value=login):
+                self.assertEqual(qq.maintenance_state()['maintenance']['state'],expected)
+        self.assertEqual((self.root/'qq-channel.json').read_bytes(),before)
+
+    def test_explicit_start_does_not_change_binding_or_enable_channel(self):
+        before=(self.root/'qq-channel.json').read_bytes()
+        with patch.object(qq,'start') as start,patch.object(qq,'health',return_value={'online':False}):qq.configure(self.db,{'action':'start'})
+        start.assert_called_once();self.assertEqual((self.root/'qq-channel.json').read_bytes(),before)
+
+    def test_maintenance_get_is_read_only_and_remote_actions_stay_denied(self):
+        import threading,urllib.request
+        from http.server import ThreadingHTTPServer
+        from app import console_server as cs,whale_channel
+        result={'health':{'online':True,'bound':True},'maintenance':{'state':'ready'}}
+        before=(self.root/'qq-channel.json').read_bytes()
+        with patch.object(qq,'maintenance_state',return_value=result):
+            server=ThreadingHTTPServer(('127.0.0.1',0),cs.Handler)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(f'http://127.0.0.1:{server.server_port}/api/qq',timeout=3) as response:
+                    self.assertEqual(json.load(response),result)
+            finally:server.shutdown();server.server_close();thread.join(timeout=2)
+        self.assertEqual((self.root/'qq-channel.json').read_bytes(),before)
+        self.assertIn('/api/qq',whale_channel.GET_ROUTES);self.assertNotIn('/api/qq',whale_channel.POST_ROUTES)
 
     def test_hmac_raw_bytes_and_missing_or_wrong_secret(self):
         raw='{"你好": 1}'.encode();sig='sha1='+hmac.new(b'a'*64,raw,hashlib.sha1).hexdigest()

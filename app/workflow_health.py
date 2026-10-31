@@ -35,7 +35,9 @@ def snapshot(path):
             result['reply_counts']=dict(db.execute('SELECT status,count(*) FROM reply_outbox GROUP BY status'))
             result['reply_pending']=result['reply_counts'].get('pending',0)
             result['reply_attempted']=result['reply_counts'].get('attempted',0)
-            result['reply_uncertain']=result['reply_counts'].get('outcome_uncertain',0)
+            from app.queue_maintenance import resolutions,resolved
+            handled=resolutions(db)
+            result['reply_uncertain']=0 if not result['reply_counts'].get('outcome_uncertain') else sum(not resolved(status,handled.get(('send',key))) for key,status in db.execute("SELECT id,status FROM reply_outbox WHERE status='outcome_uncertain'"))
         # Route through the same immutable address resolver as the sender.
         from app.channels import address
         result['reply_routes']={}

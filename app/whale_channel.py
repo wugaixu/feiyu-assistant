@@ -23,8 +23,8 @@ REGISTRY=ROOT/'whale-data/whale-devices.json'
 DEVICE_RE=re.compile(r'[0-9a-f]{64}')
 GET_ROUTES={'/','/favicon.ico','/api/overview','/api/threads','/api/agents/dsh','/api/agents/astrbot','/api/activity','/api/tasks','/api/outbound','/api/comments','/api/comment-login','/api/storage','/api/channels','/api/app/ping'}
 POST_ROUTES={'/api/target','/api/agent','/api/astrbot/session','/api/policy','/api/activity','/api/channels','/api/local-image'}
-GET_ROUTES.add('/api/groups')
-POST_ROUTES.add('/api/groups')
+GET_ROUTES.update(('/api/groups','/api/qq','/api/maintenance'))
+POST_ROUTES.update(('/api/groups','/api/maintenance'))
 
 
 def settings():

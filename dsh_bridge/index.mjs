@@ -5,27 +5,28 @@ import {join} from 'node:path';
 import {timingSafeEqual} from 'node:crypto';
 
 export const name = 'douyin-local-session-bridge';
-export const inject = ['sessionController','agentPresets'];
+export const inject = ['sessionController','agentPresets','workspaceRegistry'];
 const ROOT = String.raw`__RUNTIME_ROOT__`;
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
-export const capabilities = Object.freeze({version:4,protocol_version:4,sources:['douyin','whale'],mode:'queue',creates_agent:false,native_images:false,materials:'shared_local_paths'});
+export const capabilities = Object.freeze({version:4,protocol_version:4,sources:['douyin','whale'],mode:'queue',creates_agent:false,unarchived_sessions_only:true,native_images:false,materials:'shared_local_paths'});
 export const validEnvelope = message => typeof message==='string' && message.length<=30000 &&
   ['[抖音私信]','[鲸聊私信]','[抖音选片任务]'].some(prefix=>message.startsWith(prefix));
 function read(path) {return JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));}
-export function summaries(items) {
-  return items.filter(x => ID.test(x.sessionId) && x.origin !== 'subagent' && x.formatStatus !== 'migration-required').map(x => ({
+export function summaries(items, archivedIds=[]) {
+  const archived=new Set(archivedIds);
+  return items.filter(x => ID.test(x.sessionId) && !archived.has(x.sessionId) && !x.archived && !x.archivedAt && x.origin !== 'subagent' && x.formatStatus !== 'migration-required').map(x => ({
     id:x.sessionId, title:String(x.projections?.values?.title || '(无标题)').slice(0,160),
     recency:Number(x.updatedAt)||0, running:!!x.running, agent_available:!!x.agentAvailable,
     cwd:String(x.cwd || x.projections?.values?.workingDirectory || '').slice(0,1024),
     preset:String(x.projections?.values?.agentPreset || '').slice(0,160),
   })).sort((a,b) => b.recency-a.recency).slice(0,100);
 }
-export function createHandler(controller, root=ROOT, presets=null) {
+export function createHandler(controller, root=ROOT, presets=null, workspaces=null) {
   const credential=read(join(root,'dsh-bridge.json'));
   const key=Buffer.from(String(credential.token),'utf8');
   if (key.length < 32) throw new Error('Connector credential is missing or too short');
   const listSessions=async()=>{
-    const items=summaries((await controller.list({},AbortSignal.timeout(10000))).items);
+    const items=summaries((await controller.list({},AbortSignal.timeout(10000))).items,workspaces?.archivedSessionIds || []);
     if (!presets) return items;
     // Registry metadata only: no Agent creation, model call or session mutation.
     const available=await presets.list();
@@ -75,7 +76,7 @@ export function createHandler(controller, root=ROOT, presets=null) {
 }
 export function apply(ctx) {
   ctx.effect(() => {
-    const server=http.createServer(createHandler(ctx.sessionController,ROOT,ctx.agentPresets));
+    const server=http.createServer(createHandler(ctx.sessionController,ROOT,ctx.agentPresets,ctx.workspaceRegistry));
     server.requestTimeout=30000;server.headersTimeout=10000;
     server.on('error',err=>console.error('douyin bridge:',err.code || 'startup_failed'));
     server.listen(8794,'127.0.0.1');

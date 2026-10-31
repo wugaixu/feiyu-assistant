@@ -21,7 +21,7 @@ D:\FeiyuData\core-venv\Scripts\python.exe configure.py
 D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_components.py --runtime-dir D:\FeiyuData --component sdk
 ```
 
-`configure.py` 只在新的 `<runtime>/installed/0.3.1` 生成运行代码和缺失的初始配置，不启动程序、不迁移历史、不覆盖旧目录。源码保留模板，实际运行生成目录；以后升级先备份并按新版本迁移，不反复强制覆盖代码/配置。
+`configure.py` 只在新的 `<runtime>/installed/0.3.2` 生成运行代码和缺失的初始配置，不启动程序、不迁移历史、不覆盖旧目录。源码保留模板，实际运行生成目录；以后升级先备份并按新版本迁移，不反复强制覆盖代码/配置。
 
 核心 SDK 使用 npm `douyin-im@1.1.0`；原验证源码提交为 `f6eee669c39094224e00c6b877e1964d9da4e393`。发布版统一从 `<runtime>/node_modules/douyin-im/lib/index.js` 加载，不依赖作者研究目录。
 
@@ -65,14 +65,14 @@ D:\FeiyuData\core-venv\Scripts\python.exe deploy/install_plugins.py --runtime-di
 ```yaml
 - insert:
     - id: douyin-local-session-bridge
-      name: "file:///D:/FeiyuData/installed/0.3.1/dsh_bridge/index.mjs"
+      name: "file:///D:/FeiyuData/installed/0.3.2/dsh_bridge/index.mjs"
 ```
 
 先备份原文件，不覆盖其他插件；在DSH正常重载或重启后确认8794在线。管理台选DSH时会检查并修复丢失的注册行，保留原条目。接口以DSH0.2.1-rc系列的SessionController为基线，更新后须确认。DSH消息须按生成目录AGENTS说明读取资料并执行bridge完成任务。
 
 ## 3. 启动、扫码与手机连接
 
-从 `<runtime>/installed/0.3.1/管理界面.vbs` 启动；它隐藏控制台，管理台保活SDK、receiver和已启用的鲸聊。页面关闭只是保留到托盘，退出用托盘“关闭程序”。不添加开机自启或Codex定时任务。
+从 `<runtime>/installed/0.3.2/管理界面.vbs` 启动；它隐藏控制台，管理台保活SDK、receiver和已启用的鲸聊。页面关闭只是保留到托盘，退出用托盘“关闭程序”。不添加开机自启或Codex定时任务。
 
 SDK首次产生 `<runtime>/sdk-login.png`，用**助手小号**扫码；平台验证由自己完成。管理台检查实际小号UID，不能拿SDK在线代替主站评论登录或DouK Cookie。
 
@@ -144,3 +144,9 @@ NapCat、抖音SDK、DouK、主站评论登录是不同登录面：QQ小号扫�
 ## 手机管理台黑屏恢复
 
 请确认电脑托盘程序仍在运行；退出整个程序会同时关闭网关，单关管理网页不会。聊天正常而管理台黑屏时，点击右上角刷新会重新加载管理页；重新打开也会检测页面是否仍响应。15秒未加载可选择“单独打开管理台”。更新网关后手机完全重新打开鲸聊以加载新页面，不要仅因临时断线就清除配对。旧页面在内存中不会因电脑源码变化而自动变成新版。
+
+## v0.3.2 升级与维护
+
+生成新的 `installed/0.3.2`，不要覆盖正在使用的代码或用初始配置替换已有设置。`codex_workspace` 是会话列表的固定范围；生成后从“智能体与会话”选择现存未归档会话。DSH插件注入sessionController、agentPresets和workspaceRegistry，正常重启DSH后加载归档过滤。
+
+管理台“连接与账号 → QQ”可检查账号在线与绑定，扫码和启动仅在电脑操作，手机只能读取状态。工作台的会话/回复卡片可进入“消息记录 → 异常维护”：可人工结束卡住任务、取消未发回复或标记历史发送结果已处理，不补发、不重投，不改变原始平台回执。维护操作有确认和状态复查，审计保存在业务数据库queue_maintenance表。正常重启管理台与托管鲸聊网关加载新代码，旧任务不自动重放。

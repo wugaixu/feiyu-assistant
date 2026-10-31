@@ -168,25 +168,12 @@ def recent_activity(thread_ids):
 
 
 def choose_thread(config=None, activity=None):
-    """Pick the delivery thread and report why. Never raises."""
+    """Use only the explicitly saved conversation, never activity or fallbacks."""
     config = config if isinstance(config, dict) else target_config()
-    fallback = config.get('fallback_thread_id')
-    fallback = fallback if _valid(fallback) else DEFAULT_THREAD_ID
-    if config.get('mode') == 'most_recent':
-        candidates = [c for c in config.get('candidates', []) if _valid(c)]
-        if not candidates:
-            return {'thread_id': fallback, 'reason': 'no_valid_candidates'}
-        activity = recent_activity(candidates) if activity is None else activity
-        if not activity:
-            return {'thread_id': fallback, 'reason': 'activity_unavailable'}
-        selectable = [c for c in candidates if not activity.get(c, (0, False))[1]] or candidates
-        chosen = max(selectable, key=lambda c: activity.get(c, (0, False))[0])
-        return {'thread_id': chosen, 'reason': 'most_recent',
-                'recency_ms': {c: activity.get(c, (0, False))[0] for c in candidates}}
     explicit = config.get('thread_id')
     if _valid(explicit):
         return {'thread_id': explicit, 'reason': 'explicit'}
-    return {'thread_id': fallback, 'reason': 'default'}
+    return {'thread_id': None, 'reason': 'selection_required'}
 
 
 def thread_id():
@@ -313,6 +300,7 @@ def dispatch_one(db, runner=None, executable=None):
         binary = None
     else:
         target = choose_thread(config)['thread_id']
+        if not target:raise ValueError('请在管理台固定选择 Work 1 的 Codex 会话；任务保留待投递')
         binary = executable or codex_executable()
         if not binary or Path(binary).suffix.lower() != '.exe':
             raise ValueError('Native codex.exe required; shell launchers are not used')

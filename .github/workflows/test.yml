@@ -30,7 +30,7 @@ jobs:
       - name: Python and UI regressions
         shell: pwsh
         run: |
-          Set-Location "$env:RUNNER_TEMP/feiyu/installed/0.3.1"
+          Set-Location "$env:RUNNER_TEMP/feiyu/installed/0.3.2"
           python -m unittest discover -q
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test test_whale_bridge.mjs test_whale_standalone.mjs test_whale_pairing.mjs test_whale_upload.mjs
@@ -50,4 +50,10 @@ jobs:
           node test_whale_manager_recovery.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node test_whale_reconnect.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test_console_layout.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test_qq_account_ui.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test_queue_maintenance_ui.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

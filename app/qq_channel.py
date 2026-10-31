@@ -96,13 +96,58 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def health():
+    # Login info may remain cached after a disconnect. Check live OneBot status.
+    checked=time.time()
     try:
-        info = api('get_login_info', timeout=2)
-        account = qq_id(info.get('user_id'))
-        config = settings()
-        return {'online':True,'account_id':account,'bound':account==str(config.get('account_id')),
-                'nickname':str(info.get('nickname') or '')[:80]}
-    except Exception: return {'online':False,'bound':False}
+        status=api('get_status',timeout=2)
+        info=api('get_login_info',timeout=2)
+        account=qq_id(info.get('user_id'))
+        online=status.get('online') is True and status.get('good') is True
+        return {'online':online,'api_reachable':True,'account_id':account,
+                'bound':account==str(settings().get('account_id')),
+                'nickname':str(info.get('nickname') or '')[:80],
+                'state':'online' if online else 'qq_offline','checked_at':checked}
+    except Exception as exc:
+        return {'online':False,'bound':False,'api_reachable':False,
+                'state':'api_unavailable','error_class':type(exc).__name__,'checked_at':checked}
+
+
+def login_status():
+    """Read the local NapCat login phase; never return QR URLs or credentials."""
+    try:
+        config=settings();nap=Path(config.get('napcat_dir',''))
+        token=json.loads((nap/'config/webui.json').read_text(encoding='utf-8'))['token']
+        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+        def request(path,body,credential=None):
+            headers={'Content-Type':'application/json'}
+            if credential:headers['Authorization']='Bearer '+credential
+            req=urllib.request.Request('http://127.0.0.1:6099/api'+path,data=json.dumps(body).encode(),headers=headers)
+            with opener.open(req,timeout=2) as response:raw=response.read(MAX_EVENT+1)
+            if len(raw)>MAX_EVENT:raise ValueError('WebUI response too large')
+            value=json.loads(raw)
+            if not isinstance(value,dict) or value.get('code')!=0:raise ValueError('WebUI authentication or status unavailable')
+            return value.get('data') or {}
+        auth=request('/auth/login',{'hash':hashlib.sha256((token+'.napcat').encode()).hexdigest()})
+        credential=auth.get('Credential')
+        if not isinstance(credential,str) or not credential:raise ValueError('WebUI credential unavailable')
+        data=request('/QQLogin/CheckLoginStatus',{},credential)
+        return {'reachable':True,'logged_in':data.get('isLogin') is True,
+                'offline':data.get('isOffline') is True,'initializing':data.get('qrLoginAccepted') is True,
+                'core_ready':data.get('coreReady') is True,'has_login_error':bool(data.get('loginError')),
+                'waiting_qrcode':data.get('loginPhase')=='waiting_qrcode'}
+    except Exception as exc:return {'reachable':False,'error_class':type(exc).__name__}
+
+
+def maintenance_state():
+    value=state();login=login_status();health=value['health']
+    if health.get('online') and health.get('bound'):code='ready';label='登录正常';detail='当前小号在线且与工作流绑定一致。'
+    elif health.get('online'):code='account_mismatch';label='账号不匹配';detail='当前登录QQ与已绑定小号不同，请在NapCat核对账号。'
+    elif not login.get('reachable'):code='connection_unavailable';label='维护连接不可用';detail='无法读取NapCat维护接口，可能未启动、认证失效或连接异常。'
+    elif login.get('has_login_error'):code='login_error';label='登录异常';detail='NapCat报告登录错误，请打开登录维护页处理。'
+    elif login.get('initializing'):code='initializing';label='登录初始化中';detail='已扫码，等待QQ完成初始化后再检查。'
+    elif login.get('waiting_qrcode') or login.get('offline') or not login.get('logged_in'):code='login_required';label='需要扫码登录';detail='NapCat在运行，但QQ未在线；请用机器人小号扫码。'
+    else:code='api_unavailable';label='QQ已登录，收发接口未就绪';detail='请在NapCat检查OneBot HTTP接口、端口和令牌。'
+    return {**value,'maintenance':{'state':code,'label':label,'detail':detail,'webui':login,'checked_at':time.time()}}
 
 
 def state():
@@ -110,7 +155,7 @@ def state():
     return {'enabled':bool(config.get('enabled')),'owner_id':config.get('owner_id',''),
             'account_id':config.get('account_id',''),'health':health(),
             'login_url':'http://127.0.0.1:6099/webui',
-            'note':'仅主账号 QQ 私聊；群聊和陌生人不接入。与三种智能体共用十秒合并、资料包和回复队列。'}
+            'note':'仅主账号 QQ 私聊；群聊和陌生人不接入。与三种智能体共用资料包和回复队列；纯文字等待5秒，含媒体10秒。'}
 
 
 def configure(db, body):
@@ -121,6 +166,8 @@ def configure(db, body):
         token = (ROOT/'qq-webui-secret.txt').read_text(encoding='utf-8').strip()
         from urllib.parse import quote
         os.startfile('http://127.0.0.1:6099/webui?token='+quote(token, safe=''))
+    elif body.get('action') == 'start':
+        start()
     elif body.get('action') == 'bind':
         status = health()
         if not status.get('online'): raise ValueError('请先在 NapCat 页面登录小号')

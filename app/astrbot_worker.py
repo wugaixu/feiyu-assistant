@@ -178,8 +178,8 @@ def _run(task_id,target):
             with db:
                 # Release the single-processing slot without re-arming delivery:
                 # the uncertain dispatch row itself prevents an automatic retry.
-                db.execute("UPDATE live_tasks SET status='pending' WHERE id=? AND status='processing'",(task_id,))
-                db.execute("UPDATE chat_dispatch SET status='outcome_uncertain' WHERE task_id=?",(task_id,))
+                changed=db.execute("UPDATE live_tasks SET status='pending' WHERE id=? AND status='processing'",(task_id,)).rowcount
+                if changed:db.execute("UPDATE chat_dispatch SET status='outcome_uncertain' WHERE task_id=?",(task_id,))
     finally:
         try:
             dest=ROOT/'astrbot-receipts';dest.mkdir(exist_ok=True)

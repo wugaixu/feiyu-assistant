@@ -1,0 +1,21 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync('app/console.html','utf8');
+const source=html.split('<script>')[1].split('</script>')[0].replace(/\nrenderNav\(\);load\(\);/,'');
+const calls=[],nodes=new Map();let allow=false;
+const element=()=>({innerHTML:'',textContent:'',dataset:{},classList:{add(){},remove(){}},setAttribute(){},querySelectorAll(){return [];}});
+const ctx=vm.createContext({console,AbortController,Date,document:{body:{classList:{contains(){return false},toggle(){}}},getElementById(id){if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)},querySelector(){return element()},querySelectorAll(){return []},addEventListener(){}},window:{addEventListener(){},scrollTo(){}},sessionStorage:{getItem(){},setItem(){}},confirm:()=>allow,setTimeout(){},clearTimeout(){},setInterval(){}});
+vm.runInContext(source,ctx);const run=s=>vm.runInContext(s,ctx);
+ctx.fixture={tasks:[{id:'task',status:'processing',received:1,text:'卡住的任务'}],sends:[{id:'reply',task_id:'task',status:'outcome_uncertain',kind:'text',text:'发送结果未知'}],history:[]};ctx.calls=calls;
+run("api=async(path,opts)=>{if(opts?.method==='POST'){calls.push({path,body:JSON.parse(opts.body)});return {ok:true};}return fixture;};load=()=>{};toast=()=>{};");
+(async()=>{
+ const {allowedManage}=await import('./integrations/whale_assistant_bridge.mjs');
+ assert.equal(allowedManage('GET','/api/maintenance'),true);assert.equal(allowedManage('POST','/api/maintenance'),true);assert.equal(allowedManage('DELETE','/api/maintenance'),false);assert.equal(allowedManage('POST','/api/maintenance/../app/quit'),false);
+ ctx.el=element();await run('renderMaintenance(el)');assert.equal(calls.length,0);
+ assert.match(ctx.el.innerHTML,/结束并忽略/);assert.match(ctx.el.innerHTML,/结束关注/);assert.match(ctx.el.innerHTML,/不会重新投递/);
+ await run("maintainQueue('task',0,'end')");assert.equal(calls.length,0,'dismissed confirmation must not change state');
+ allow=true;await run("maintainQueue('task',0,'end')");
+ assert.equal(calls[0].path,'/api/maintenance');assert.deepEqual(JSON.parse(JSON.stringify(calls[0].body)),{kind:'task',id:'task',action:'end',expected_status:'processing'});
+ await run('dismissUnknownSends()');assert.equal(calls[1].body.action,'dismiss');assert.equal(calls[1].body.expected_status,'outcome_uncertain');
+ assert.doesNotMatch(JSON.stringify(calls),/retry|requeue/);
+ console.log('Maintenance UI: read-only render, explicit confirmation, snapshot validation and no replay passed');
+})().catch(e=>{console.error(e);process.exitCode=1;});
