@@ -36,6 +36,14 @@ vm.runInContext(source,ctx);const run=s=>vm.runInContext(s,ctx);
  assert.doesNotMatch(html,/Codex 自动跟随|candidate_add|candidate_remove/);
  assert.match(html,/新会话请先在对应应用中创建/);
  assert.match(html,/onclick="saveActivity\(\)"/);
+ ctx.fixtureButton={disabled:false,textContent:'检查连接'};ctx.feedback=[];
+ run("toast=msg=>feedback.push(msg)");
+ ctx.responses['/api/overview'].workflow.sdk={online:false,note:'login_failed_manual_action_required'};
+ await run('checkDouyinConnection(fixtureButton)');assert.match(ctx.feedback.at(-1),/登录失败/);
+ assert.equal(posts.length,0,'checking must not login, send or mutate settings');
+ assert.equal(run('sdkConnectionResult(null).online'),false);
+ assert.match(run("sdkConnectionResult({online:false,note:'qr_required: sdk-login.png'}).text"),/扫码/);
+ assert.equal(run('sdkConnectionResult({online:true}).online'),true);
  console.log('Console redesign: navigation groups, legacy QQ route, drawer, dirty edits, feature placement, QQ receipts and remote restrictions passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 

@@ -23,9 +23,13 @@ UPLOADS = set()
 TOKEN = secrets.token_urlsafe(32)
 
 
+MODELS = ('qwen',)
+
+
 def graph_for(data):
     prompt = data.get('prompt', '')
     refs = data.get('images', [])
+    model = data.get('model', 'qwen')
     steps = data.get('steps', 8)
     resolution = data.get('resolution', 768)
     seed = data.get('seed', -1)
@@ -39,6 +43,8 @@ def graph_for(data):
         raise ValueError('分辨率无效')
     if type(seed) is not int or not -1 <= seed <= 2**32 - 1:
         raise ValueError('种子无效')
+    if model not in MODELS:
+        raise ValueError('当前仅支持千问 Image 2.1')
     graph = local_images.workflow(prompt.strip())
     graph['4']['inputs'].pop('images', None)
     graph['4']['inputs']['resolution'] = resolution
@@ -138,7 +144,8 @@ def complete(job):
     OUTPUT.mkdir(parents=True, exist_ok=True)
     saved = []
     for index, image in enumerate(images):
-        dest = OUTPUT / f"qwen-{job['id']}-{index + 1}.png"
+        prefix = 'qwen'
+        dest = OUTPUT / f"{prefix}-{job['id']}-{index + 1}.png"
         if not dest.exists():
             body = request_bytes('/view?' + urllib.parse.urlencode(image))
             if not body.startswith(b'\x89PNG\r\n\x1a\n'):
@@ -154,6 +161,7 @@ def complete(job):
 
 def ensure_ready(timeout=180):
     """Start the reusable local backend when it is not running; no remote host."""
+    local_images.touch('manual-demand')
     deadline = time.monotonic() + timeout
     while True:
         try:
@@ -188,8 +196,6 @@ def worker():
         try:
             if busy:
                 local_images.touch('manual-job')
-            elif local_images.idle_expired():
-                local_images.stop_backend('portal-idle')
         except Exception:
             pass
         time.sleep(2)
@@ -263,7 +269,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError('已有3个生成任务，请等待完成')
                     graph = graph_for(data)
                     key = time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:10]
-                    job = {'id': key, 'state': 'submitting', 'prompt': data['prompt'], 'references': len(data.get('images', [])), 'seed': graph['6']['inputs']['seed']}
+                    job = {'id': key, 'state': 'submitting', 'prompt': data['prompt'], 'references': len(data.get('images', [])), 'model': data.get('model', 'qwen'), 'seed': graph['6']['inputs']['seed']}
                     JOBS[key] = job
                     persist()
                     try:

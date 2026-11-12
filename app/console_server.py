@@ -689,6 +689,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, overview_state())
             elif path == '/api/app/ping':
                 self._send(200, {'ok': True, 'pid': os.getpid(), 'ui_revision': ui_document()[1], 'local_image_batch_version': 1, 'whale_channel_version':1, 'whale_audio_version':1})
+            elif path == '/api/douyin-login':
+                from app.sdk_login import state
+                self._send(200,state())
             elif path == '/api/qq':
                 from app import qq_channel
                 self._send(200,qq_channel.maintenance_state())
@@ -761,7 +764,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/whale-bridge' or bridge_token:
             if not whale_channel.authenticate(bridge_token,bridge_device,management=path!='/api/whale-bridge') or (path!='/api/whale-bridge' and path not in whale_channel.POST_ROUTES):
                 self._send(403,{'error':'Whale bridge denied'});return
-        guarded = path.startswith('/api/storage') or path.startswith('/api/astrbot') or path in ('/api/maintenance','/api/agent','/api/review','/api/comment-login','/api/activity','/api/local-image','/api/channels','/api/qq','/api/whale-bridge','/api/groups')
+        guarded = path.startswith('/api/storage') or path.startswith('/api/astrbot') or path in ('/api/douyin-login','/api/manual-image/open','/api/maintenance','/api/agent','/api/review','/api/comment-login','/api/activity','/api/local-image','/api/channels','/api/qq','/api/whale-bridge','/api/groups')
         if guarded:
             origin=self.headers.get('Origin')
             if self.headers.get('Host') not in ('127.0.0.1:8793','localhost:8793') or (origin and origin not in ('http://127.0.0.1:8793','http://localhost:8793')) or 'application/json' not in self.headers.get('Content-Type',''):
@@ -805,6 +808,15 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/api/comment-login':
                 from app.comment_login import start
                 self._send(200,start(_stop))
+            elif path == '/api/douyin-login':
+                from app.sdk_login import start
+                if not _sdk_up():
+                    self._send(400,{'error':'SDK服务未启动，请先在诊断与维护启动程序'});return
+                self._send(200,start())
+            elif path == '/api/manual-image/open':
+                from app.manual_images import ensure_portal,APP_URL
+                ensure_portal()
+                self._send(200,{'ok':True,'url':APP_URL})
             elif path == '/api/maintenance':
                 from app.queue_maintenance import apply
                 with closing(sqlite3.connect(ASSISTANT_DB,timeout=3)) as db:

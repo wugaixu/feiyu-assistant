@@ -89,9 +89,16 @@ class PortalTests(unittest.TestCase):
     def test_rejects_unuploaded_paths_and_invalid_inputs(self):
         for data in ({'prompt': ''}, {'prompt': 'x', 'images': ['../secret']},
                      {'prompt': 'x', 'steps': True}, {'prompt': 'x', 'seed': 2**40},
-                     {'prompt': 'x', 'resolution': 800}):
+                     {'prompt': 'x', 'resolution': 800}, {'prompt': 'x', 'model': 'flux'}):
             with self.assertRaises(ValueError):
                 portal.graph_for(data)
+
+    def test_retired_model_is_rejected_and_qwen_keeps_eight_steps(self):
+        with self.assertRaisesRegex(ValueError, '仅支持千问'):
+            portal.graph_for({'prompt': '测试', 'model': 'moss'})
+        graph = portal.graph_for({'prompt': '测试'})
+        self.assertEqual(graph['6']['inputs']['steps'], 8)
+
 
     def test_background_save_is_idempotent_and_uses_requested_directory(self):
         with tempfile.TemporaryDirectory(dir=portal.local_images.ROOT) as folder:

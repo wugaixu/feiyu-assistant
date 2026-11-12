@@ -154,7 +154,7 @@ def state():
     config = settings()
     return {'enabled':bool(config.get('enabled')),'owner_id':config.get('owner_id',''),
             'account_id':config.get('account_id',''),'health':health(),
-            'login_url':'http://127.0.0.1:6099/webui',
+            'login_url':'http://127.0.0.1:6099/webui/web_login',
             'note':'仅主账号 QQ 私聊；群聊和陌生人不接入。与三种智能体共用资料包和回复队列；纯文字等待5秒，含媒体10秒。'}
 
 
@@ -165,7 +165,7 @@ def configure(db, body):
         # Open only locally; the private WebUI token never enters API output.
         token = (ROOT/'qq-webui-secret.txt').read_text(encoding='utf-8').strip()
         from urllib.parse import quote
-        os.startfile('http://127.0.0.1:6099/webui?token='+quote(token, safe=''))
+        os.startfile('http://127.0.0.1:6099/webui/web_login?token='+quote(token, safe=''))
     elif body.get('action') == 'start':
         start()
     elif body.get('action') == 'bind':

@@ -34,6 +34,26 @@ class ManualImageTests(unittest.TestCase):
                     manual.install_assets()
             self.assertEqual(list(Path(folder).iterdir()), [])
 
+    def test_open_page_does_not_wake_or_require_model(self):
+        with patch('sys.argv',['manual_images']),patch.object(manual,'ensure_portal') as portal,patch.object(manual,'open_app') as browser,patch.object(manual,'install_assets') as install,patch.object(manual.local_images,'ensure_backend') as backend:
+            manual.main()
+        portal.assert_called_once();browser.assert_called_once();install.assert_not_called();backend.assert_not_called()
+
+    def test_no_browser_starts_only_portal(self):
+        with patch('sys.argv',['manual_images','--no-browser']),patch.object(manual,'ensure_portal') as portal,patch.object(manual,'open_app') as browser,patch.object(manual.local_images,'ensure_backend') as backend:
+            manual.main()
+        portal.assert_called_once();browser.assert_not_called();backend.assert_not_called()
+
+    def test_manager_portal_open_is_local_only_and_does_not_wake_model(self):
+        import io
+        from unittest.mock import Mock
+        from app.console_server import Handler
+        for origin,expected in [('https://untrusted.invalid',403),('http://127.0.0.1:8793',200)]:
+            h=object.__new__(Handler);h.path='/api/manual-image/open';h.headers={'Host':'127.0.0.1:8793','Origin':origin,'Content-Type':'application/json','Content-Length':'2'};h.rfile=io.BytesIO(b'{}');h._send=Mock()
+            with patch.object(manual,'ensure_portal') as portal,patch.object(manual.local_images,'ensure_backend') as backend:h.do_POST()
+            self.assertEqual(h._send.call_args.args[0],expected)
+            self.assertEqual(portal.call_count,1 if expected==200 else 0);backend.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

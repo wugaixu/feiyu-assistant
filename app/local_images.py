@@ -211,14 +211,18 @@ def workflow(prompt):
 
 def ensure_backend():
     global _process,_log
+    touch('backend-demand')
     try:api('/system_stats',timeout=2);return True
     except Exception:pass
     if _process is not None and _process.poll() is None:return False
-    if _process is not None:raise RuntimeError('Managed ComfyUI exited; inspect backend log before restarting')
+    if _process is not None:
+        if _process.returncode != 0:raise RuntimeError('Managed ComfyUI exited; inspect backend log before restarting')
+        _process=None
+        if _log is not None:_log.close();_log=None
     py=BASE/'venv/Scripts/pythonw.exe';main=BASE/'ComfyUI/main.py'
     if not py.exists() or not main.exists():raise ValueError('本地生图运行环境不完整')
     _log=(BASE/'comfyui.log').open('a',encoding='utf-8')
-    _process=subprocess.Popen([str(py),'-B','-X','utf8',str(main),'--listen','127.0.0.1','--port','8188','--lowvram','--preview-method','none','--disable-auto-launch'],cwd=main.parent,stdout=_log,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    _process=subprocess.Popen([str(py),'-B','-X','utf8','-m','app.image_backend'],cwd=Path(__file__).resolve().parents[1],stdout=_log,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     return False
 
 
@@ -271,14 +275,8 @@ def step(db):
     _notify_problems(db)
     row=db.execute("SELECT * FROM local_image_jobs WHERE state IN ('starting','submitting','running','ready','queued') ORDER BY CASE WHEN state='queued' THEN 1 ELSE 0 END,created,batch_index,id LIMIT 1").fetchone()
     if not row:
-        if _process is not None and _process.poll() is None and not _released:
-            latest=db.execute('SELECT MAX(updated) FROM local_image_jobs').fetchone()[0]
-            if latest and time.time()-latest>300:
-                api('/free',{'unload_models':True,'free_memory':True});_released=True
-        # The model is already unloaded above; this releases the process itself
-        # so an idle machine keeps its memory and VRAM.
-        if _process is not None and _process.poll() is None and idle_expired():
-            stop_backend('manager-idle')
+        # Only the backend watchdog owns idle exit. Parent-local job tables
+        # cannot establish whether another UI is currently using the backend.
         return
     row=dict(row);key=row['id'];state=row['state'];now=time.time()
     if state=='ready':

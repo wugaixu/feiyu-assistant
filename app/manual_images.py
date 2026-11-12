@@ -1,7 +1,7 @@
-"""Standalone hidden launcher for the installed official ComfyUI App Mode.
+"""Standalone hidden launcher for the lightweight manual image portal.
 
 No AI provider, owner task, permit, database or messaging outbox is involved.
-The formal launcher owns only a backend it starts; repeated opens reuse it.
+Opening starts or reuses only the page service. The portal owns model wake-up and idle exit.
 """
 import argparse
 import ctypes
@@ -66,55 +66,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-browser', action='store_true')
     args = parser.parse_args()
-    mutex = None
-    if sys.platform == 'win32':
-        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        kernel.CreateMutexW.restype = ctypes.c_void_p
-        kernel.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
-        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-        mutex = kernel.CreateMutexW(None, False, 'Local\\FeiyuManualComfyUI')
-        if not mutex:
-            raise OSError(ctypes.get_last_error(), 'Cannot create launcher mutex')
-        duplicate = ctypes.get_last_error() == 183
-    else:
-        duplicate = False
-    try:
-        if not duplicate:
-            install_assets()
-        deadline = time.monotonic() + 180
-        while True:
-            try:
-                if duplicate:
-                    local_images.api('/system_stats', timeout=2)
-                    ready = True
-                else:
-                    ready = local_images.ensure_backend()
-                if ready:
-                    break
-            except (OSError, ValueError):
-                if not duplicate:
-                    raise
-            if time.monotonic() >= deadline:
-                raise TimeoutError('ComfyUI startup exceeded 180 seconds; inspect comfyui.log')
-            time.sleep(1)
-        ensure_portal()
-        if not args.no_browser:
-            open_app()
-        local_images.touch('manual-open')
-        # This is the installed GUI launcher, not a tool-session subprocess.
-        # It ends only the backend it started, after being idle as configured;
-        # a reused backend is never terminated here.
-        if not duplicate and local_images._process is not None:
-            while local_images._process is not None and local_images._process.poll() is None:
-                if local_images.idle_expired():
-                    local_images.stop_backend('manual-idle')
-                    break
-                time.sleep(5)
-    finally:
-        if not duplicate:
-            local_images.shutdown()
-        if mutex:
-            kernel.CloseHandle(mutex)
+    # The portal owns backend wake-up and idle exit. Merely opening its page
+    # must not require ComfyUI, GPU initialization or workflow installation.
+    ensure_portal()
+    if not args.no_browser:
+        open_app()
 
 
 if __name__ == '__main__':

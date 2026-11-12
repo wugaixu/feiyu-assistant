@@ -188,13 +188,49 @@ function connectionCards(wf={},c={},interactive=false){
 function openConnection(view){channelView=view;openTab('channels');}
 function showQQAccount(){openConnection('qq');}
 function setChannelView(view){channelView=view;load();}
+let sdkCheckedAt=0;
+function sdkConnectionResult(sdk){
+ if(sdk?.online===true)return {online:true,text:'抖音私信 SDK 账号在线'};
+ if(!sdk)return {online:false,text:'无法连接抖音私信 SDK 服务，请检查程序运行状态'};
+ const note=String(sdk.note||'');
+ if(['login_failed_manual_action_required','login_error'].includes(note))return {online:false,text:'抖音私信 SDK 登录失败，需要重新登录；检查连接不会自动重新登录，评论主站登录也不能修复此连接'};
+ if(note.startsWith('qr_required'))return {online:false,text:'抖音私信 SDK 正在等待扫码登录，请使用当前有效二维码'};
+ if(note==='manual_verification_required')return {online:false,text:'抖音私信 SDK 需要手动完成登录验证'};
+ return {online:false,text:'抖音私信 SDK 尚未在线，请检查登录与连接状态'};
+}
+async function checkDouyinConnection(button){
+ button.disabled=true;button.textContent='正在检查…';
+ try{
+  const result=await api('/api/overview');sdkCheckedAt=Date.now();
+  const state=sdkConnectionResult(result.workflow?.sdk);
+  await load();toast(state.text);
+ }catch(e){toast('连接检查失败：'+e.message);button.disabled=false;button.textContent='重试检查';}
+}
+let sdkLoginPoll=null;
+async function openDouyinLogin(){
+ if(!confirm('重新连接抖音私信SDK？请用机器人小号扫码，需要额外验证时由你完成。不会切换主人绑定或补发旧消息。'))return;
+ const panel=document.getElementById('douyin-login-panel');if(!panel)return;
+ panel.innerHTML='<p class="muted">正在请求登录…</p>';
+ try{await post('/api/douyin-login',{});await pollDouyinLogin();}catch(e){panel.textContent=e.message;}
+}
+async function pollDouyinLogin(){
+ clearTimeout(sdkLoginPoll);
+ const panel=document.getElementById('douyin-login-panel');if(!panel||current!=='channels'||channelView!=='douyin')return;
+ try{
+  const s=await api('/api/douyin-login');
+  const text=s.online?(s.account_matches?'机器人小号登录成功。':'当前登录账号与绑定小号不一致，收发仍受阻，请核对账号。'):s.state?.startsWith('qr_required')?(s.qr_image?'请用机器人小号扫码并在手机上确认。二维码有效期内会自动更新状态。':'二维码已过期，请重新点击登录。'):s.state==='logging_in'?'正在连接抖音，请稍候…':s.state==='manual_verification_required'?'请在已打开的验证界面完成验证。':s.state==='service_offline'?'SDK服务未连接，请检查程序状态。':'登录未完成，若持续失败请检查网络后重新登录。';
+  panel.innerHTML=`<section class="card" style="margin-top:16px"><b>${esc(text)}</b>${s.qr_image?`<div><img src="${esc(s.qr_image)}" alt="抖音SDK登录二维码" style="width:240px;max-width:100%;margin-top:12px"></div>`:''}<p class="muted">这里登录的是私信小号，与评论主站登录独立。请勿用主人主账号扫码。</p></section>`;
+  if(s.online){sdkCheckedAt=Date.now();await load();toast(text);return;}
+  sdkLoginPoll=setTimeout(pollDouyinLogin,2000);
+ }catch(e){panel.textContent='登录状态读取失败：'+e.message;}
+}
 async function renderChannels(el){
  const [c,wf,q]=await Promise.all([api('/api/channels'),api('/api/overview').then(x=>x.workflow).catch(()=>({})),channelView==='qq'?api('/api/qq'):Promise.resolve(null)]);
  whaleDevices=whaleDeviceChoices(c);
  const activeName={douyin:'抖音',qq:'QQ',whale:'鲸聊'}[c.active?.channel]||'抖音';
  let content='';
  if(channelView==='qq')content=qqAccountMaintenanceHtml(q||c.qq||{});
- else if(channelView==='douyin')content=`<section class="card"><div class="stage-top"><h3>抖音聊天 SDK</h3><span class="chip ${wf.sdk?.online?'on':''}">${wf.sdk?.online?'账号在线':'连接待检查'}</span></div><dl class="capability-facts"><dt>当前账号</dt><dd>${esc(wf.sdk?.nickname||'暂未取得')}</dd><dt>消息范围</dt><dd>主人私聊，以及你启用的群和成员</dd><dt>登录用途</dt><dd>负责私信与群聊收发，与作品评论主站登录独立</dd></dl><div class="review-row"><button class="btn" onclick="refreshView()">检查连接</button><button class="btn" onclick="openTab('groups')">群聊回复设置</button><button class="btn" onclick="openTab('comments')">评论主站登录 →</button></div><details class="technical"><summary>账号与连接详情</summary><div class="mono">账号 UID：${esc(wf.sdk?.uid||'未取得')}</div><p class="muted">小号登录失效时，请在原抖音登录入口处理。管理台不会自动切换账号或绕过登录验证。</p></details></section>`;
+ else if(channelView==='douyin')content=`<section class="card"><div class="stage-top"><h3>抖音聊天 SDK</h3><span class="chip ${wf.sdk?.online?'on':''}">${wf.sdk?.online?'账号在线':'连接待检查'}</span></div><dl class="capability-facts"><dt>当前账号</dt><dd>${esc(wf.sdk?.nickname||'暂未取得')}</dd><dt>连接结果</dt><dd style="color:${wf.sdk?.online?'var(--ok)':'var(--bad)'}">${esc(sdkConnectionResult(wf.sdk).text)}</dd><dt>检查时间</dt><dd>${sdkCheckedAt?new Date(sdkCheckedAt).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'页面载入时检查；可点击下方按钮重新检查'}</dd><dt>消息范围</dt><dd>主人私聊，以及你启用的群和成员</dd><dt>登录用途</dt><dd>负责私信与群聊收发，与作品评论主站登录独立</dd></dl><div class="review-row"><button class="btn" onclick="checkDouyinConnection(this)">检查连接</button>${window.__WHALE_REMOTE__?'':'<button class="btn primary" onclick="openDouyinLogin()">重新登录抖音 SDK</button>'}<button class="btn" onclick="openTab('groups')">群聊回复设置</button><button class="btn" onclick="openTab('comments')">评论主站登录 →</button></div><div id="douyin-login-panel"></div><details class="technical"><summary>账号与连接详情</summary><div class="mono">账号 UID：${esc(wf.sdk?.uid||'未取得')}</div><p class="muted">小号登录失效时，请在原抖音登录入口处理。管理台不会自动切换账号或绕过登录验证。</p></details></section>`;
  else content=`<section class="card"><div class="stage-top"><h3>鲸聊 · 手机连接</h3><span class="chip ${c.enabled&&c.gateway_online?'on':''}">${c.enabled?(c.gateway_online?'网关在线':'网关未连接'):'通道已暂停'}</span></div><dl class="capability-facts"><dt>公网入口</dt><dd>${c.public_network?.reachable===true?'已核验可连接':c.public_network?.reachable===false?'当前连接异常':'尚未核验'}</dd><dt>手机管理</dt><dd>${c.remote_management?'已开放':'已关闭'}</dd></dl><label for="whale-device" class="muted">已配对设备</label><div class="review-row"><select id="whale-device" aria-label="鲸聊设备" onchange="showWhaleDevice()" style="flex:1;min-width:180px">${whaleDevices.map(d=>`<option value="${esc(d.id)}" ${c.active?.device===d.id?'selected':''}>${esc(d.name)}${(c.current_device===d.id||d.pairings?.some(x=>x.id===c.current_device))?' · 本机':''}${c.active?.device===d.id?' · 主动消息目的设备':''}</option>`).join('')}</select><button class="btn" onclick="renameWhaleDevice()" ${!c.devices?.length?'disabled':''}>备注设备名</button></div><p id="whale-device-detail" class="muted"></p><div class="review-row"><button class="btn" onclick="channelSetting('enabled',${!c.enabled})">${c.enabled?'暂停鲸聊':'启用鲸聊'}</button><button class="btn" onclick="channelSetting('remote_management',${!c.remote_management})">${c.remote_management?'关闭手机管理':'允许手机管理'}</button></div>${window.__WHALE_REMOTE__?'':`<details class="technical"><summary>配对与设备维护</summary><div class="review-row">${c.pairing_url?`<a class="btn" href="${esc(c.pairing_url)}" target="_blank" rel="noopener noreferrer">打开配对面板</a>`:''}<button class="btn" onclick="channelSetting('sync_paired',true)">同步新配对设备</button></div><p class="muted">临时断线请先重试连接，无需重新扫码。配对只在添加新设备或原授权失效时使用。</p></details>`}</section>`;
  el.innerHTML=connectionCards(wf,c,true)+content+`<section class="card" style="margin-top:20px"><h3>主动消息去向 <span class="chip tgt">当前：${esc(activeName)}</span></h3><p class="muted">只用于日记主动联系与作品分享；普通私信始终回复原通道。收到主人新消息后，默认去向会跟随来源。</p><div class="review-row"><button class="btn ${c.active?.channel==='douyin'?'primary':''}" onclick="setChannel('douyin')">发往抖音</button><button class="btn ${c.active?.channel==='whale'?'primary':''}" ${!c.enabled||!c.devices?.length?'disabled':''} onclick="${channelView==='whale'?`setChannel('whale')`:`setChannelView('whale')`}">${channelView==='whale'?'发往所选鲸聊设备':'选择鲸聊设备'}</button>${window.__WHALE_REMOTE__?'':`<button class="btn ${c.active?.channel==='qq'?'primary':''}" ${!c.qq?.enabled||!c.qq?.health?.online?'disabled':''} onclick="qqAction('activate')">发往 QQ</button>`}</div></section>`;
  if(channelView==='whale')setTimeout(showWhaleDevice,0);
@@ -229,7 +265,7 @@ async function renderCapabilities(el){
  const a=await api('/api/agents/astrbot');const image=a.local_image||{};
  const jobLabels={queued:'排队',starting:'启动中',submitting:'提交中',running:'生成中',ready:'等待回复',outbox_queued:'已入发送队列',failed:'失败',outcome_uncertain:'结果待查',needs_attention:'需关注'};
  const jobs=Object.entries(image.jobs||{}).map(([k,v])=>`${jobLabels[k]||k} ${v}`).join(' · ');
- el.innerHTML=`<section class="card" style="margin-bottom:20px"><div class="stage-top"><h3>AstrBot 扩展能力</h3><span class="chip ${a.online?'on':''}">${a.online?'实例已连接':'实例未连接'}</span></div><p class="muted">语音与本地生图由 AstrBot 插件调用。Codex 和 DSH 使用各自宿主的能力；切换处理会话不会改变模型文件或资源目录。</p><div class="review-row"><button class="btn primary" onclick="openAstrbotUi()">打开 AstrBot 配置页</button><button class="btn" onclick="openTab('sessions')">选择处理会话</button></div></section><div class="capability-grid"><section class="card"><div class="capability-top"><h3>本地千问生图</h3><span class="chip">无需 API Key</span></div><dl class="capability-facts"><dt>功能开关</dt><dd>${image.enabled?'已启用':'已暂停'}</dd><dt>模型后端</dt><dd>${image.backend_online?'在线':'按需启动，空闲时释放'}</dd><dt>单批数量</dt><dd>最多 ${esc(image.max_batch_images||1)} 张，逐张生成与发送</dd><dt>当前队列</dt><dd>${esc(jobs||'暂无任务')}</dd></dl><button class="btn" onclick="toggleLocalImage(${!image.enabled})">${image.enabled?'暂停新生图':'启用生图'}</button>${image.error?`<p class="muted">最近异常：${esc(image.error)}</p>`:''}<details class="technical"><summary>近期生成批次</summary><p class="muted">${esc((image.batches||[]).map(b=>`${b.total}张 · 已入队${b.queued_to_outbox}张 · 待处理${b.remaining}张`).join('；')||'暂无批次')}</p></details></section>${voiceCapabilitiesHtml(a.voice||{})}</div>${window.__WHALE_REMOTE__?'':`<section class="card" style="margin-top:20px"><h3>手动千问生图</h3><p class="muted">直接输入描述或参考图片，无需聊天智能体；生成后保存到配置的输出目录。</p><a id="manual-image-entry" class="btn" href="http://127.0.0.1:8189/" target="_blank" rel="noopener noreferrer">打开手动生图网页 ↗</a><p class="muted" style="font-size:11px">若服务未启动，请使用桌面的“本地千问生图”入口。</p></section>`}`;
+ el.innerHTML=`<section class="card" style="margin-bottom:20px"><div class="stage-top"><h3>AstrBot 扩展能力</h3><span class="chip ${a.online?'on':''}">${a.online?'实例已连接':'实例未连接'}</span></div><p class="muted">语音与本地生图由 AstrBot 插件调用。Codex 和 DSH 使用各自宿主的能力；切换处理会话不会改变模型文件或资源目录。</p><div class="review-row"><button class="btn primary" onclick="openAstrbotUi()">打开 AstrBot 配置页</button><button class="btn" onclick="openTab('sessions')">选择处理会话</button></div></section><div class="capability-grid"><section class="card"><div class="capability-top"><h3>本地千问生图</h3><span class="chip">无需 API Key</span></div><dl class="capability-facts"><dt>功能开关</dt><dd>${image.enabled?'已启用':'已暂停'}</dd><dt>模型后端</dt><dd>${image.backend_online?'在线':'按需启动，空闲时释放'}</dd><dt>单批数量</dt><dd>最多 ${esc(image.max_batch_images||1)} 张，逐张生成与发送</dd><dt>当前队列</dt><dd>${esc(jobs||'暂无任务')}</dd></dl><button class="btn" onclick="toggleLocalImage(${!image.enabled})">${image.enabled?'暂停新生图':'启用生图'}</button>${image.error?`<p class="muted">最近异常：${esc(image.error)}</p>`:''}<details class="technical"><summary>近期生成批次</summary><p class="muted">${esc((image.batches||[]).map(b=>`${b.total}张 · 已入队${b.queued_to_outbox}张 · 待处理${b.remaining}张`).join('；')||'暂无批次')}</p></details></section>${voiceCapabilitiesHtml(a.voice||{})}</div>${window.__WHALE_REMOTE__?'':`<section class="card" style="margin-top:20px"><h3>手动千问生图</h3><p class="muted">直接输入描述或参考图片，无需聊天智能体；使用千问 Image 2.1 模型，生成后保存到配置的输出目录。</p><a id="manual-image-entry" class="btn" onclick="openManualPortal(event)" href="http://127.0.0.1:8189/" target="_blank" rel="noopener noreferrer">打开手动生图网页 ↗</a><p class="muted" style="font-size:11px">打开时自动唤起轻量网页；上传参考图或点击生成才启动模型。也可使用桌面的“本地千问生图”入口。</p></section>`}`;
 }
 async function renderSessions(el){
  const wanted=pickerProvider||window.__WHALE_PROVIDER__;
@@ -285,6 +321,13 @@ async function renderSessions(el){
  choice.onchange=show;apply.onclick=()=>agent(browsing,choice.value,configSelect?configSelect.value:null);show();
 }
 function pickProvider(provider){pickerProvider=provider;load();}
+async function openManualPortal(event){
+ event.preventDefault();
+ const tab=window.open('about:blank','_blank');if(tab)tab.opener=null;
+ try{const r=await post('/api/manual-image/open',{});if(tab)tab.location.href=r.url;else toast('网页服务已启动，请允许弹窗或打开 http://127.0.0.1:8189/');}
+ catch(e){if(tab)tab.close();toast('网页启动失败：'+e.message+'；可使用桌面生图入口');}
+}
+
 async function toggleLocalImage(enabled){try{await post('/api/local-image',{enabled});toast(enabled?'本地生图已启用':'已暂停新生图；已受理任务继续处理');load();}catch(e){toast('设置失败：'+e.message);}}
 
 

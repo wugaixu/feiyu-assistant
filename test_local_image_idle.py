@@ -49,6 +49,7 @@ class LocalImageIdleTests(unittest.TestCase):
             process = Mock(); process.poll.return_value = None
             fake = Mock()
             with patch.object(li, 'BASE', root), patch.object(li, '_process', process), patch.object(li, '_log', None), \
+                 patch.object(li, 'touch'), \
                  patch.object(li, 'api', side_effect=ConnectionError('offline')), \
                  patch.object(li.subprocess, 'Popen', return_value=fake) as popen:
                 self.assertTrue(li.stop_backend('unit'))

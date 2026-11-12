@@ -70,4 +70,27 @@ class SelectedSessionTests(TriggerCase):
         decision=run(stack.proactive.patrol(now=SUN,allowed_umos={'aiocqhttp:FriendMessage:10001'}))
         self.assertEqual(decision['slot'],'signal')
 
+class RuntimePatrolTests(unittest.TestCase):
+    def test_native_runtime_binding_and_interval_are_preserved(self):
+        from contextlib import nullcontext
+        runtime=types.SimpleNamespace(scope='legacy',settings=types.SimpleNamespace(subsystem=lambda _:True,proactive={'patrol_minutes':15}))
+        plugin=types.SimpleNamespace(_manager=types.SimpleNamespace(isolation_on=False),_patrol_seen={},_bind_runtime=Mock(return_value=nullcontext()))
+        with patch.object(adapter,'patrol',new_callable=AsyncMock) as patrol:
+            asyncio.run(adapter.patrol_runtime(plugin,runtime));asyncio.run(adapter.patrol_runtime(plugin,runtime))
+        patrol.assert_awaited_once_with(plugin);plugin._bind_runtime.assert_called_once_with(runtime)
+
+    def test_disabled_runtime_still_updates_bridge_status(self):
+        from contextlib import nullcontext
+        runtime=types.SimpleNamespace(scope='legacy',settings=types.SimpleNamespace(subsystem=lambda _:False,proactive={'patrol_minutes':15}))
+        plugin=types.SimpleNamespace(_manager=types.SimpleNamespace(isolation_on=False),_patrol_seen={'legacy':time.monotonic()},_bind_runtime=lambda _:nullcontext())
+        with patch.object(adapter,'patrol',new_callable=AsyncMock) as patrol:asyncio.run(adapter.patrol_runtime(plugin,runtime))
+        patrol.assert_awaited_once()
+
+    def test_other_isolated_runtime_never_decides_or_sends(self):
+        runtime=types.SimpleNamespace(scope='other')
+        plugin=types.SimpleNamespace(_manager=types.SimpleNamespace(isolation_on=True))
+        with patch.object(transport,'expected_umo',return_value='webchat:FriendMessage:webchat!u!selected'),patch.object(adapter,'patrol',new_callable=AsyncMock) as patrol:
+            asyncio.run(adapter.patrol_runtime(plugin,runtime))
+        patrol.assert_not_called()
+
 if __name__=='__main__':unittest.main()

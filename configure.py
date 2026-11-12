@@ -1,7 +1,7 @@
 """Compile a relocatable deployment from this clean source snapshot; never start services."""
 import argparse,json,os,re,secrets,shutil,sys
 from pathlib import Path
-VERSION='0.3.2'
+VERSION='0.4.0'
 REPO=Path(__file__).resolve().parent
 
 def safe_path(value):
@@ -56,7 +56,7 @@ def configure(cfg):
     secret=runtime/'whale-bridge-secret.txt'
     if not secret.exists():secret.write_text(secrets.token_hex(32),encoding='utf-8')
     # Independent loopback credentials; keep existing operator-provided values.
-    for name in ('qq-onebot-secret.txt','qq-webui-secret.txt'):
+    for name in ('qq-onebot-secret.txt','qq-webui-secret.txt','sdk-management-secret.txt'):
         target=runtime/name
         if not target.exists():target.write_text(secrets.token_hex(32),encoding='utf-8')
     for folder in ('tests','outgoing-images','outgoing-audio','backups','task-context','media','tools','manual-images/output'):(runtime/folder).mkdir(parents=True,exist_ok=True)

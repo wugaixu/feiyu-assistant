@@ -4,6 +4,7 @@
 
 桌面双击“本地千问生图”，或运行项目`本地生图.vbs`。页面为`http://127.0.0.1:8189/`，管理台“手动生图”也指向这里。已打开的管理台刷新后更新链接；旧`?feiyu_manual=1`入口刷新会跳转新页面。
 
+- 页面顶部“生图模型”可选 **千问 Image 2.1**（默认，GGUF）或 **MOSS-Image SFT**（原生节点）。两模型都支持纯文字与参考图；MOSS 参考图走 `TextEncodeMOSSImageEdit` 的 `images.image_N` 动态接口（扁平点号键，image_0 起）。MOSS 固定 euler + sgm_uniform、cfg 3、ModelSamplingSD3 shift 5。
 - 不上传图片：纯文字生图；上传1–16张：Qwen Image 2.1原生参考图生成。可拖入/多选、预览、排序和移除，提示词用“图1”“图2”指定用途。建议先用1–3张，避免显存压力。
 - 复用现有GGUF模型、量化文本编码器、VAE、ComfyUI队列。参考图接入`TextEncodeQwenImage21`的`images.image_N`动态接口；采样器连接编码节点的第3个输出（原生64通道latent），尺寸匹配首图比例。无参考图时输出正方形。
 - 可选512/768/1024分辨率、1–60步、固定或随机种子；默认768、8步。

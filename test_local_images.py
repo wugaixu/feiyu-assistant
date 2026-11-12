@@ -9,7 +9,7 @@ from unittest.mock import patch
 from app import local_images as li
 from app.sdk_receiver import OWNER
 
-TMP=Path(r'__RUNTIME_ROOT__\tests')
+TMP=Path(r'__TEMP_PARENT__\tests')
 TMP.mkdir(parents=True,exist_ok=True)
 
 
@@ -24,9 +24,10 @@ class LocalImageTests(unittest.TestCase):
         self.db.execute('INSERT INTO live_tasks VALUES(?,?,?,?)',(self.task,OWNER,'processing',json.dumps({'direction':'incoming','raw_text':'你好'})))
         self.db.execute('INSERT INTO chat_dispatch VALUES(?,?,?)',(self.task,'attempted',json.dumps({'provider':'astrbot','session_id':'private'})));self.db.commit()
         self.cfg=patch.object(li,'settings',return_value={'enabled':True});self.cfg.start()
+        self.activity=patch.object(li,'ACTIVITY',self.root/'image-activity.json');self.activity.start()
 
     def tearDown(self):
-        self.cfg.stop();self.db.close();self.tmp.cleanup()
+        self.activity.stop();self.cfg.stop();self.db.close();self.tmp.cleanup()
 
     def token(self):
         text=li.permit(self.db,self.task,'private')

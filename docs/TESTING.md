@@ -6,10 +6,11 @@
 
 ```powershell
 python deploy/doctor.py --runtime-dir D:\FeiyuData
-cd D:\FeiyuData\installed\0.3.1
+cd D:\FeiyuData\installed\0.4.0
 python -m unittest discover -q
 node --test test_whale_bridge.mjs test_whale_standalone.mjs test_whale_pairing.mjs test_whale_upload.mjs
 node --test dsh_bridge/test.mjs
+node --test test_sdk_login.mjs
 node test_console_ui.cjs
 node test_whale_audio_ui.cjs
 node test_whale_voice_order.cjs
@@ -69,3 +70,11 @@ node test_whale_voice_order.cjs
 全新隔离目录经configure.py配置：602项Python检查，2项因可选依赖/权限条件跳过，其余通过；23项Node协议/网关检查、七套UI脚本通过。新增测试覆盖纯文字5秒边界、媒体仍10秒、语音转写不冒充纯文本、各通道一致；手机管理页失效后的强制刷新、重新打开存活检查、超时备用入口以及同源窗口校验。
 
 真实公网移动尺寸浏览器复现旧页刷新失败并验证新页恢复；用户随后确认手机管理台恢复。代码与源码清单检查通过，私有路径、账号及凭据扫描无命中。不发布私信、数据库、Cookie、配对密钥或本地模型权重；本次仅源代码更新，无新APK构建。
+
+## v0.4.0 发布前验证（2026-11-12）
+
+- 全新隔离目录经 `configure.py` 配置为 `installed/0.4.0`：632项Python检查通过，2项因可选依赖/权限条件跳过。
+- 15项Node协议/网关、DSH及SDK登录生命周期检查通过；管理台、手动生图、群管理、手机语音、消息顺序、重连、QQ账号、队列维护等全部UI脚本通过。
+- 新增覆盖本机SDK登录密钥及请求来源限制、二维码有效期、并发登录和离线状态、ComfyUI真实队列保护与空闲退出、手动页面按需启动、日记新版适配。
+- 对发布目录中的已知本地路径、账号标识、域名和常见密钥格式扫描无命中；未复制运行数据库、登录Cookie、配对密钥或模型权重。
+- 以上为隔离测试，不代表真实抖音账号、QQ账号或手机收到的外部端到端验收；本次未构建或安装APK，未重启生产服务或对外试发。

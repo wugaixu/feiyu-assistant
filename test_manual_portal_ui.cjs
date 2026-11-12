@@ -1,3 +1,5 @@
+const page=require('node:fs').readFileSync('integrations/comfy_manual/portal.html','utf8');
+require('node:assert/strict').doesNotMatch(page,/MOSS|id="model"/);
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync('integrations/comfy_manual/portal.html','utf8').split('<script>')[1].split('</script>')[0].replace(/refresh\(\);setInterval\(refresh,3000\);/,'');
 function setup(){

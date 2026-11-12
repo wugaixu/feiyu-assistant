@@ -12,10 +12,26 @@ from app.live_service import LiveStore,ROOT
 from .core.proactive import diagnostics
 
 def mark_loaded(plugin):
-    report={'adapter_version':1,'updated_at':time.time(),'checked_at':None,
+    report={'adapter_version':1,'adapter_revision':2,'updated_at':time.time(),'checked_at':None,
             'enabled':plugin.settings.subsystem('proactive'),'reason':'接入就绪，等待插件定期巡检',
             **{k:plugin.settings.proactive.get(k) for k in ('patrol_minutes','daily_limit_private','min_interval_minutes')}}
     (ROOT/'diary-proactive-state.json').write_text(json.dumps(report,ensure_ascii=False),encoding='utf-8')
+
+
+async def patrol_runtime(plugin,runtime):
+    """Bind only the selected runtime; retain its native patrol throttle."""
+    manager=plugin._manager
+    if manager.isolation_on:
+        from .core.runtime import scope_id_from_umo
+        umo=bridge.expected_umo()
+        if not umo or scope_id_from_umo(umo)!=runtime.scope:return
+    enabled=runtime.settings.subsystem('proactive')
+    minutes=int(runtime.settings.proactive.get('patrol_minutes',15) or 15)
+    stamp=time.monotonic();last=plugin._patrol_seen.get(runtime.scope)
+    if enabled and last is not None and stamp-last<minutes*60:return
+    plugin._patrol_seen[runtime.scope]=stamp
+    with plugin._bind_runtime(runtime):
+        await patrol(plugin)
 
 async def sync(plugin):
     store=LiveStore(ROOT/'assistant.sqlite3');db=store.db
@@ -59,7 +75,7 @@ async def patrol(plugin):
                 reason='插件已触发，等待统一发送队列处理'
     except Exception as exc:reason='插件接入检查失败：'+type(exc).__name__
     finally:
-        report={'adapter_version':1,'updated_at':time.time(),'checked_at':time.time(),'enabled':enabled,'reason':reason,
+        report={'adapter_version':1,'adapter_revision':2,'updated_at':time.time(),'checked_at':time.time(),'enabled':enabled,'reason':reason,
                 'patrol_minutes':plugin.settings.proactive.get('patrol_minutes'),
                 'daily_limit_private':plugin.settings.proactive.get('daily_limit_private'),
                 'min_interval_minutes':plugin.settings.proactive.get('min_interval_minutes')}
@@ -79,3 +95,6 @@ def session_for_event(event,session_type):return diary_context.session(event,ses
 
 
 def owner_text(event):return diary_context.text(event)
+
+
+def has_workflow_event(event):return diary_context.message(event) is not None

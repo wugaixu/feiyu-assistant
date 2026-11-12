@@ -1,7 +1,8 @@
 // Local SDK transport. MIT dependency: zhinjs/douyin-im; no browser automation.
 import {createServer} from 'node:http';
 import {readFileSync,writeFileSync,realpathSync,mkdirSync} from 'node:fs';
-import {createHash} from 'node:crypto';
+import {createHash,timingSafeEqual} from 'node:crypto';
+import {loginController} from './sdk_login.mjs';
 import {join,relative,isAbsolute,dirname} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {installInbox} from './sdk_inbox.mjs';
@@ -15,6 +16,7 @@ const ownerUid='__OWNER_UID__';
 const state={ok:false,online:false,uid:null,nickname:null,note:'starting',updated_at:0};
 function publish(patch){Object.assign(state,patch,{updated_at:Date.now()/1000});writeFileSync(join(root,'sdk-sender-status.json'),JSON.stringify(state,null,2));}
 const client=createClient({dataDir});
+const login=loginController(client,publish,state);
 const groups=groupSdk(join(root,'assistant.sqlite3'),'__ACCOUNT_UID__');
 const inbox=installInbox(client,dataDir,ownerUid,{allowedGroup:groups.allowed});
 client.on('system.online',({account})=>publish({ok:true,online:true,uid:account.uid,nickname:account.nickname,note:''}));
@@ -23,7 +25,7 @@ client.on('system.reconnecting',()=>publish({ok:false,online:false,note:'reconne
 client.on('system.login.error',()=>publish({ok:false,online:false,note:'login_error'}));
 client.on('system.login.qrcode',async({account,qrcodeBase64})=>{
   writeFileSync(join(root,'sdk-login.png'),Buffer.from(qrcodeBase64,'base64'));
-  publish({ok:false,online:false,note:'qr_required: sdk-login.png'});await account.continueLogin();
+  publish({ok:false,online:false,note:'qr_required: sdk-login.png',qr_created_at:Date.now()/1000});await account.continueLogin();
 });
 client.on('system.login.verification',async({verification})=>{
   publish({ok:false,online:false,note:'manual_verification_required'});await verification.open();
@@ -40,6 +42,15 @@ const server=createServer((req,res)=>{
   const reply=(status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value,(_,v)=>typeof v==='bigint'?String(v):v));};
   try{if(inbox(req,res))return;}catch{reply(500,{ok:false,error:'inbox_unavailable'});return;}
   const url=req.url?.split('?')[0];
+  if(req.method==='POST'&&url==='/login'){
+    try{
+      const secret=Buffer.from(readFileSync(join(root,'sdk-management-secret.txt'),'utf8').trim());
+      const supplied=Buffer.from(String(req.headers['x-sdk-management']||''));
+      if(req.headers.host!=='127.0.0.1:8791'||req.headers.origin||secret.length<48||supplied.length!==secret.length||!timingSafeEqual(secret,supplied)){reply(403,{ok:false});return;}
+      reply(202,{ok:true,...login.start()});
+    }catch{reply(403,{ok:false});}
+    return;
+  }
   if(req.method==='GET'&&url==='/health'){reply(200,{...state,capabilities:{share:true,group_chat:1}});return;}
   if(req.method==='GET'&&url==='/groups'){
     if(!state.online||state.uid!=='__ACCOUNT_UID__'){reply(503,{ok:false});return;}
@@ -86,5 +97,4 @@ const server=createServer((req,res)=>{
   });
 });
 server.listen(8791,'127.0.0.1');
-try{await client.login();const account=client.pickAccount();publish({ok:true,online:true,uid:account.uid,nickname:account.nickname,note:''});}
-catch{publish({ok:false,online:false,note:'login_failed_manual_action_required'});}
+login.start(true);
